@@ -1,0 +1,160 @@
+{
+  "entities": {
+    "Customer": {
+      "title": "Customer",
+      "description": "Represents a credit or cash customer at Phoenix Financial Services.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the customer" },
+        "fileNo": { "type": "string", "description": "National Credit Act file number" },
+        "name": { "type": "string", "description": "Display name of the customer" },
+        "surname": { "type": "string", "description": "Surname of the customer" },
+        "firstNames": { "type": "string", "description": "First names of the customer" },
+        "phone": { "type": "string", "description": "Mobile contact number" },
+        "email": { "type": "string", "description": "Email address" },
+        "idNumber": { "type": "string", "description": "South African ID number" },
+        "address": { "type": "string", "description": "Residential address" },
+        "employer": { "type": "string", "description": "Employer name" },
+        "workPhone": { "type": "string", "description": "Work contact number" },
+        "workAddress": { "type": "string", "description": "Employer address" },
+        "salaryDay": { "type": "number", "description": "Day of the month salary is received" },
+        "incomeSource": { "type": "string", "description": "Source of income" },
+        "church": { "type": "string", "description": "Church/Social organization" },
+        "pastor": { "type": "string", "description": "Pastor/Leader name" },
+        "mandate": { "type": "string", "enum": ["yes", "no"] },
+        "creditLimit": { "type": "number", "description": "NCA approved credit limit" },
+        "type": { "type": "string", "enum": ["cash", "credit"] },
+        "notes": { "type": "string", "description": "Internal collection notes" },
+        "photoUrl": { "type": "string", "description": "Base64 or URL of customer photo" },
+        "created": { "type": "string", "format": "date-time" },
+        "updated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fileNo", "name", "surname", "firstNames", "phone"]
+    },
+    "Agreement": {
+      "title": "Agreement",
+      "description": "NCA compliant credit agreement detailing groceries/loan balances.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "agrNumber": { "type": "string" },
+        "customerId": { "type": "string" },
+        "date": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "purpose": { "type": "string" },
+        "goods": { "type": "number" },
+        "loan": { "type": "number" },
+        "capital": { "type": "number" },
+        "initiationFee": { "type": "number" },
+        "serviceFee": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "balance": { "type": "number" },
+        "paid": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "overdue", "paid"] },
+        "notes": { "type": "string" },
+        "created": { "type": "string" },
+        "updated": { "type": "string" }
+      },
+      "required": ["id", "agrNumber", "customerId", "totalAmount", "balance", "status"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment record matching an active or default credit agreement.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "agrId": { "type": "string" },
+        "agrNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string", "enum": ["cash", "card", "eft", "debicheck"] },
+        "reference": { "type": "string" },
+        "note": { "type": "string" },
+        "created": { "type": "string" }
+      },
+      "required": ["id", "customerId", "agrId", "amount", "date", "method"]
+    },
+    "CollectionNote": {
+      "title": "CollectionNote",
+      "description": "Dossier collection communication note.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "agrId": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string", "enum": ["call", "promise", "visit", "arrangement", "other"] },
+        "note": { "type": "string" },
+        "promiseAmount": { "type": "number" },
+        "promiseDate": { "type": "string" },
+        "printable": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "customerId", "date", "type", "note"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Stock item product catalog record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "buyPrice": { "type": "number" },
+        "sellPrice": { "type": "number" },
+        "qty": { "type": "number" },
+        "lowAt": { "type": "number" },
+        "sku": { "type": "string" },
+        "unit": { "type": "string" }
+      },
+      "required": ["id", "name", "sku", "buyPrice", "sellPrice"]
+    },
+    "OverrideLog": {
+      "title": "OverrideLog",
+      "description": "Compliance administrative override logs.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "fileNo": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string" },
+        "overriddenBy": { "type": "string" },
+        "overriddenByName": { "type": "string" },
+        "reason": { "type": "string" },
+        "outstandingBalance": { "type": "number" },
+        "created": { "type": "string" }
+      },
+      "required": ["id", "customerId", "overriddenBy", "reason", "outstandingBalance"]
+    }
+  },
+  "firestore": {
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "NCA verified customer files"
+    },
+    "/agreements/{agreementId}": {
+      "schema": { "$ref": "#/entities/Agreement" },
+      "description": "Credit agreements register"
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "Payment transactions record"
+    },
+    "/collection_notes/{noteId}": {
+      "schema": { "$ref": "#/entities/CollectionNote" },
+      "description": "Collection agency CRM contact records"
+    },
+    "/stock/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Grocery stock catalog items"
+    },
+    "/override_logs/{logId}": {
+      "schema": { "$ref": "#/entities/OverrideLog" },
+      "description": "Compliance administrative override logs"
+    }
+  }
+}

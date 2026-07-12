@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Agreement, Customer, Payment } from '../types';
 import { loadDBList, saveDBList, generateUid } from '../utils/database';
 import { generateAcknowledgementOfDebt, generateAccountInvoice, downloadRtfFile } from '../utils/rtfGenerator';
-import { printLegalAgreement, printAccountInvoice, printSalaryConsent, printAffordabilityDeclaration } from '../utils/printDoc';
+import { printLegalAgreement, printAccountInvoice, printSalaryConsent, printAffordabilityDeclaration, printFreedomOfChoiceMandate, printLossPayeeNominationMandate, printForm20Quotation } from '../utils/printDoc';
 import { Search, FileText, Download, CreditCard, Calendar, CheckCircle2, AlertTriangle, Eye, Sparkles, Printer } from 'lucide-react';
 import DocumentPreviewModal from './DocumentPreviewModal';
 
@@ -298,71 +298,86 @@ export default function AgreementsView({ agreements, customers, onRefreshDB, onN
                         </span>
                       </td>
                       <td className="p-3.5 text-right" onClick={e => e.stopPropagation()}>
-                        <div className="flex gap-1.5 justify-end items-center">
-                          <button
-                            onClick={() => setSelectedAgrId(a.id)}
-                            className="p-1.5 bg-slate-950 border border-slate-800 text-slate-300 hover:text-white rounded transition"
-                            title="Audit View"
-                          >
-                            <Eye size={13} />
-                          </button>
-                          
+                        <div className="flex flex-wrap gap-1.5 justify-end items-center">
                           {a.status !== 'paid' && (
                             <button
                               onClick={() => openPaymentModal(a)}
-                              className="p-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded transition"
+                              className="px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded text-[10px] font-bold transition cursor-pointer flex items-center gap-1"
                               title="Capture Repayment"
                             >
-                              <CreditCard size={13} />
+                              <CreditCard size={11} /> Pay
                             </button>
                           )}
 
-                          <button
+                          <button 
+                            onClick={() => setSelectedAgrId(a.id)} 
+                            className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
+                          >
+                            <Eye size={11} className="text-amber-500" /> View
+                          </button>
+                          <button 
                             onClick={() => {
-                              const cust = customers.find(c => c.id === a.customerId);
                               if (cust) printLegalAgreement(a, cust);
                               else alert('Associated customer profile not found.');
                             }}
-                            className="p-1.5 bg-slate-950 border border-slate-800 text-amber-500 hover:text-amber-400 hover:border-amber-500/50 rounded transition flex items-center gap-0.5 text-[10px]"
-                            title="Print Agreement"
+                            className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
                           >
-                            <Printer size={13} /> <span className="text-[9px] font-bold">Agr</span>
+                            <Printer size={11} className="text-amber-500" /> Print Agr
                           </button>
-
-                          <button
+                          <button 
                             onClick={() => {
-                              const cust = customers.find(c => c.id === a.customerId);
                               if (cust) printAccountInvoice(a, cust);
                               else alert('Associated customer profile not found.');
                             }}
-                            className="p-1.5 bg-slate-950 border border-slate-800 text-amber-500 hover:text-amber-400 hover:border-amber-500/50 rounded transition flex items-center gap-0.5 text-[10px]"
-                            title="Print Invoice"
+                            className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
                           >
-                            <Printer size={13} /> <span className="text-[9px] font-bold">Inv</span>
+                            <Printer size={11} className="text-amber-500" /> Print Inv
                           </button>
-
-                          <button
+                          <button 
                             onClick={() => {
-                              const cust = customers.find(c => c.id === a.customerId);
                               if (cust) printSalaryConsent(a, cust);
                               else alert('Associated customer profile not found.');
                             }}
-                            className="p-1.5 bg-slate-950 border border-slate-800 text-amber-500 hover:text-amber-400 hover:border-amber-500/50 rounded transition flex items-center gap-0.5 text-[10px]"
-                            title="Print Salary Consent"
+                            className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
                           >
-                            <Printer size={13} /> <span className="text-[9px] font-bold">Consent</span>
+                            <Printer size={11} className="text-amber-500" /> Print Consent
                           </button>
-
-                          <button
+                          <button 
                             onClick={() => {
-                              const cust = customers.find(c => c.id === a.customerId);
                               if (cust) printAffordabilityDeclaration(a, cust);
                               else alert('Associated customer profile not found.');
                             }}
-                            className="p-1.5 bg-slate-950 border border-slate-800 text-amber-500 hover:text-amber-400 hover:border-amber-500/50 rounded transition flex items-center gap-0.5 text-[10px]"
-                            title="Print Affordability Declaration"
+                            className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
                           >
-                            <Printer size={13} /> <span className="text-[9px] font-bold">Afford</span>
+                            <Printer size={11} className="text-amber-500" /> Print Afford
+                          </button>
+                          <button 
+                            onClick={() => handlePreviewDoc(a, 'invoice')} 
+                            className="px-1.5 py-1 text-[9px] text-amber-500 hover:text-amber-400 transition font-semibold cursor-pointer"
+                            title="View Invoice Preview"
+                          >
+                            View Inv
+                          </button>
+                          <button 
+                            onClick={() => handleDownloadRtf(a, 'invoice')} 
+                            className="px-1.5 py-1 text-[9px] text-slate-500 hover:text-slate-300 transition cursor-pointer"
+                            title="Backup Download Invoice (.rtf)"
+                          >
+                            Inv.RTF
+                          </button>
+                          <button 
+                            onClick={() => handlePreviewDoc(a, 'aod')} 
+                            className="px-1.5 py-1 text-[9px] text-amber-500 hover:text-amber-400 transition font-semibold cursor-pointer"
+                            title="View AoD Preview"
+                          >
+                            View AoD
+                          </button>
+                          <button 
+                            onClick={() => handleDownloadRtf(a, 'aod')} 
+                            className="px-1.5 py-1 text-[9px] text-slate-500 hover:text-slate-300 transition cursor-pointer"
+                            title="Backup Download AoD (.rtf)"
+                          >
+                            AoD.RTF
                           </button>
                         </div>
                       </td>
@@ -603,6 +618,54 @@ export default function AgreementsView({ agreements, customers, onRefreshDB, onN
                       <button
                         onClick={() => printAffordabilityDeclaration(selectedAgreement, selectedAgreementCustomer)}
                         className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded font-bold flex items-center justify-center gap-1 cursor-pointer text-xs"
+                      >
+                        <Printer size={12} /> Print
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Document 5: Freedom of Choice Mandate */}
+                  <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-850 flex flex-col md:flex-row justify-between md:items-center gap-2">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-slate-300 block">5. Freedom Of Choice Mandate (NCA Sec 106)</span>
+                      <p className="text-[10px] text-slate-500">Statutory NCA Section 106(4) choice declaration signed by consumer.</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => printFreedomOfChoiceMandate(selectedAgreement, selectedAgreementCustomer)}
+                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded font-bold flex items-center justify-center gap-1 cursor-pointer text-xs w-full sm:w-auto"
+                      >
+                        <Printer size={12} /> Print
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Document 6: Loss Payee Nomination Mandate */}
+                  <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-850 flex flex-col md:flex-row justify-between md:items-center gap-2">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-slate-300 block">6. Loss Payee Nomination Mandate</span>
+                      <p className="text-[10px] text-slate-500">External policy beneficiary instruction designating Phoenix as loss payee.</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => printLossPayeeNominationMandate(selectedAgreement, selectedAgreementCustomer)}
+                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded font-bold flex items-center justify-center gap-1 cursor-pointer text-xs w-full sm:w-auto"
+                      >
+                        <Printer size={12} /> Print
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Document 7: Form 20 Statutory Quotation */}
+                  <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-850 flex flex-col md:flex-row justify-between md:items-center gap-2">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-slate-300 block">7. Pre-Agreement Quote (Form 20)</span>
+                      <p className="text-[10px] text-slate-500">NCR-compliant credit quotation statement outlining total cost of credit.</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => printForm20Quotation(selectedAgreement, selectedAgreementCustomer)}
+                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded font-bold flex items-center justify-center gap-1 cursor-pointer text-xs w-full sm:w-auto"
                       >
                         <Printer size={12} /> Print
                       </button>

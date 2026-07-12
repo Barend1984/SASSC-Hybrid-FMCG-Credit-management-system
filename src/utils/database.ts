@@ -1,4 +1,11 @@
 import { Customer, Agreement, Sale, Payment, CollectionNote, CashDay, CashMovement, Product, BusinessSettings, User, Session, BankDetails } from '../types';
+import { 
+  saveDocToFirestore, 
+  saveSettingsToFirestore, 
+  fetchCollectionFromFirestore, 
+  deleteDocFromFirestore, 
+  loadSettingsFromFirestore 
+} from '../lib/firestoreService';
 
 const DB_PREFIX = 'sassc2_';
 
@@ -12,7 +19,35 @@ export const loadDBList = <T>(key: string): T[] => {
 };
 
 export const saveDBList = <T>(key: string, data: T[]): void => {
+  // Try to find deleted items and remove them from Firestore
+  try {
+    const oldRaw = localStorage.getItem(DB_PREFIX + key);
+    const oldList: any[] = oldRaw ? JSON.parse(oldRaw) : [];
+    const oldIds = new Set(oldList.map(item => item?.id).filter(Boolean));
+    const newIds = new Set(data.map((item: any) => item?.id).filter(Boolean));
+    
+    // Deletions: in oldIds but not in newIds
+    const deletedIds = [...oldIds].filter(id => !newIds.has(id));
+    deletedIds.forEach(id => {
+      deleteDocFromFirestore(key, id).catch(err => {
+        console.error(`Error deleting ${id} from Firestore collection ${key}:`, err);
+      });
+    });
+  } catch (e) {
+    console.error('Error calculating deleted records for sync:', e);
+  }
+
+  // Save locally first for instant feedback
   localStorage.setItem(DB_PREFIX + key, JSON.stringify(data));
+
+  // Sync current items asynchronously to Firestore
+  data.forEach((item: any) => {
+    if (item && typeof item === 'object' && item.id) {
+      saveDocToFirestore(key, item).catch(err => {
+        console.error(`Error syncing item ${item.id} to Firestore collection ${key}:`, err);
+      });
+    }
+  });
 };
 
 export const loadDBObj = <T>(key: string, defaultValue: T): T => {
@@ -26,7 +61,61 @@ export const loadDBObj = <T>(key: string, defaultValue: T): T => {
 
 export const saveDBObj = <T>(key: string, data: T): void => {
   localStorage.setItem(DB_PREFIX + key, JSON.stringify(data));
+  if (key === 'settings') {
+    saveSettingsToFirestore('settings', data).catch(err => {
+      console.error('Error syncing settings to Firestore:', err);
+    });
+  }
 };
+
+/**
+ * Perform a complete background synchronization of all collections from Firestore.
+ * Merges local and remote collections to prevent data loss.
+ */
+export const syncWithFirestore = async (): Promise<void> => {
+  try {
+    const collectionsToSync = [
+      'customers', 'agreements', 'sales', 'payments', 'collection_notes', 
+      'cashDays', 'stock', 'users', 'cashMovements', 'stockTakes', 
+      'writeOffs', 'override_logs', 'whatsapp_logs',
+      'accountingPeriods', 'accountingAuditLogs', 'barcodeMappings', 'stockAdjustments'
+    ];
+    
+    for (const key of collectionsToSync) {
+      const remoteData = await fetchCollectionFromFirestore<any>(key);
+      if (remoteData && remoteData.length > 0) {
+        const localRaw = localStorage.getItem(DB_PREFIX + key);
+        const localData: any[] = localRaw ? JSON.parse(localRaw) : [];
+        
+        const mergedMap = new Map<string, any>();
+        
+        // Load local records first
+        localData.forEach(item => {
+          if (item && item.id) mergedMap.set(item.id, item);
+        });
+        
+        // Merge in remote records (Firestore is ultimate truth)
+        remoteData.forEach(item => {
+          if (item && item.id) {
+            mergedMap.set(item.id, item);
+          }
+        });
+        
+        const mergedList = Array.from(mergedMap.values());
+        localStorage.setItem(DB_PREFIX + key, JSON.stringify(mergedList));
+      }
+    }
+
+    // Sync business settings object
+    const remoteSettings = await loadSettingsFromFirestore<any>('settings');
+    if (remoteSettings) {
+      localStorage.setItem(DB_PREFIX + 'settings', JSON.stringify(remoteSettings));
+    }
+  } catch (error) {
+    console.error('Error running full background sync from Firestore:', error);
+  }
+};
+
 
 // --- NCA Fees Calculations ---
 export const INITIATION_RATE = 0.10;

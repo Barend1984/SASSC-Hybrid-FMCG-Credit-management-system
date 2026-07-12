@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Product, CartItem, Sale, Customer, CashDay } from '../types';
-import { loadDBList, saveDBList, generateUid } from '../utils/database';
-import { ShoppingBag, Search, Trash2, Plus, Minus, UserCheck, ReceiptText, Sparkles } from 'lucide-react';
+import { Product, CartItem, Sale, Customer, CashDay, Agreement, OverrideLog } from '../types';
+import { loadDBList, saveDBList, generateUid, checkCustomerOverdue, getCustomerExposure } from '../utils/database';
+import { ShoppingBag, Search, Trash2, Plus, Minus, UserCheck, ReceiptText, Sparkles, Shield, ShieldCheck, ShieldAlert, Ban, Check } from 'lucide-react';
 
 interface PosCashViewProps {
   activeDay: CashDay | null;
   onRefreshStats: () => void;
   customers: Customer[];
   currentUser: any;
+  agreements: Agreement[];
   onCompleteSale: (sale: Sale) => void;
 }
 
-export default function PosCashView({ activeDay, onRefreshStats, customers, currentUser, onCompleteSale }: PosCashViewProps) {
+export default function PosCashView({ activeDay, onRefreshStats, customers, currentUser, agreements, onCompleteSale }: PosCashViewProps) {
   const [stock, setStock] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -21,6 +22,22 @@ export default function PosCashView({ activeDay, onRefreshStats, customers, curr
   const [retailCustomerName, setRetailCustomerName] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
+
+  // Administrative Override States
+  const [adminOverrideActive, setAdminOverrideActive] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+
+  // Reset override states when customer changes
+  useEffect(() => {
+    setAdminOverrideActive(false);
+    setOverrideReason('');
+  }, [selectedCustomerId]);
+
+  const selectedCustomer = customers.find(c => c.id === selectedCustomerId) || null;
+  const currentExposure = selectedCustomerId ? getCustomerExposure(selectedCustomerId, agreements) : 0;
+  const isCustomerInDefaultOrHasBalance = selectedCustomerId ? (checkCustomerOverdue(selectedCustomerId, agreements) || currentExposure > 0) : false;
+  const isBlocked = isCustomerInDefaultOrHasBalance && !adminOverrideActive;
 
   useEffect(() => {
     const list = loadDBList<Product>('stock');
@@ -87,6 +104,10 @@ export default function PosCashView({ activeDay, onRefreshStats, customers, curr
       alert('Your cart is empty.');
       return;
     }
+    if (isBlocked) {
+      alert('⛔ POS checkout blocked! Selected customer has an outstanding balance or overdue agreement.');
+      return;
+    }
 
     const currentSubtotal = getSubtotal();
     const currentTotal = getTotal();
@@ -118,6 +139,30 @@ export default function PosCashView({ activeDay, onRefreshStats, customers, curr
     const allSales = loadDBList<Sale>('sales');
     allSales.push(sale);
     saveDBList('sales', allSales);
+
+    // Save override log if override active
+    if (adminOverrideActive && selectedCustomer) {
+      try {
+        const overrideLog: OverrideLog = {
+          id: generateUid(),
+          customerId: selectedCustomerId,
+          customerName: `${selectedCustomer.firstNames || ''} ${selectedCustomer.surname || ''}`.trim() || selectedCustomer.name,
+          fileNo: selectedCustomer.fileNo,
+          date: new Date().toISOString().split('T')[0],
+          type: 'pos_override',
+          overriddenBy: currentUser?.id || 'admin',
+          overriddenByName: currentUser?.fullName || 'Administrator',
+          reason: overrideReason,
+          outstandingBalance: currentExposure,
+          created: new Date().toISOString()
+        };
+        const allOverrides = loadDBList<OverrideLog>('override_logs');
+        allOverrides.push(overrideLog);
+        saveDBList('override_logs', allOverrides);
+      } catch (err) {
+        console.error('Error saving POS administrative override log:', err);
+      }
+    }
 
     // Update stock levels
     const updatedStock = stock.map(s => {
@@ -309,6 +354,80 @@ export default function PosCashView({ activeDay, onRefreshStats, customers, curr
               )}
             </div>
 
+            {/* Customer Picker section */}
+            <div className="p-4 border-t border-slate-800 bg-slate-950/40 space-y-3">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Assign Registered Customer (Optional)
+                </label>
+                <select
+                  value={selectedCustomerId}
+                  onChange={(e) => setSelectedCustomerId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg text-slate-200 py-2 px-2.5 text-xs focus:outline-none focus:border-amber-500"
+                >
+                  <option value="">-- Walk-in Anonymous Customer --</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} {c.surname} (File: {c.fileNo})</option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedCustomerId && (
+                <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Active Debt Exposure:</span>
+                    <span className={`font-bold ${currentExposure > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      R {currentExposure.toFixed(2)}
+                    </span>
+                  </div>
+
+                  {isCustomerInDefaultOrHasBalance && (
+                    <div className="pt-2 border-t border-slate-850/60 space-y-2">
+                      <div className="flex gap-1.5 text-rose-400 text-[10px] font-bold leading-tight">
+                        <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                        <span>⛔ CHECKOUT BLOCKED DUE TO DEFAULT / UNPAID BALANCE</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Clerks are barred from completing retail sales for clients in default.
+                      </p>
+
+                      <div className="flex flex-col gap-2 pt-1.5">
+                        {adminOverrideActive ? (
+                          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] p-1.5 rounded flex items-center justify-between">
+                            <span className="font-bold flex items-center gap-0.5">
+                              <ShieldCheck className="h-3 w-3" /> Override Active
+                            </span>
+                            <span className="opacity-80 truncate max-w-[120px]" title={overrideReason}>
+                              "{overrideReason}"
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            {currentUser?.role === 'main_admin' ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOverrideReason('');
+                                  setShowOverrideModal(true);
+                                }}
+                                className="w-full py-1 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold text-[10px] transition flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <Shield size={11} /> Apply Admin Override
+                              </button>
+                            ) : (
+                              <div className="text-[10px] text-rose-400/80 italic font-medium">
+                                🔒 Administrator authorization required to bypass.
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Summary & Checkout Actions */}
             <div className="p-4 border-t border-slate-800 bg-slate-950/20 space-y-4">
               <div className="space-y-2">
@@ -366,8 +485,14 @@ export default function PosCashView({ activeDay, onRefreshStats, customers, curr
                 </div>
               )}
 
+              {isBlocked && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs p-2.5 rounded-lg">
+                  ⛔ <strong>Checkout Blocked:</strong> Assignment customer has unpaid exposure/arrears. Administrative authorization required.
+                </div>
+              )}
+
               <button
-                disabled={cart.length === 0 || !activeDay}
+                disabled={cart.length === 0 || !activeDay || isBlocked}
                 onClick={handleCompleteSale}
                 className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 disabled:from-slate-800 disabled:to-slate-800 text-slate-950 disabled:text-slate-500 font-bold rounded-xl flex items-center justify-center gap-1.5 border border-amber-400/20 disabled:border-transparent cursor-pointer disabled:cursor-not-allowed hover:brightness-110 active:scale-98 transition shadow-lg shadow-amber-500/5 disabled:shadow-none"
               >
@@ -377,6 +502,82 @@ export default function PosCashView({ activeDay, onRefreshStats, customers, curr
           </div>
         </div>
       </div>
+
+      {/* POS Administrative Override Modal */}
+      {showOverrideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col">
+            <div className="px-6 py-4 bg-slate-950/60 border-b border-slate-850 flex items-center justify-between">
+              <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                <Shield className="text-amber-500 h-5 w-5" />
+                <span>POS Administrative Override</span>
+              </h3>
+              <button 
+                onClick={() => {
+                  setShowOverrideModal(false);
+                  setOverrideReason('');
+                }}
+                className="text-slate-400 hover:text-white text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-xs text-amber-400 space-y-2">
+                <p className="font-bold">⚠️ AUDITED POS OVERRIDE</p>
+                <p>
+                  You are overriding a blocked status on POS checkout for customer <strong>{selectedCustomer ? `${selectedCustomer.firstNames || ''} ${selectedCustomer.surname || ''}`.trim() || selectedCustomer.name : 'Unknown'}</strong>.
+                </p>
+                <p>
+                  Current Active Exposure: <strong>R {currentExposure.toFixed(2)}</strong>.
+                </p>
+                <p>
+                  This action violates default checkout rules and will be permanently logged under Reports for regulatory oversight with your user details (<strong>{currentUser?.fullName || 'Operator'}</strong>).
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  Compulsory Short Note / Justification Report *
+                </label>
+                <textarea
+                  rows={3}
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="Enter detailed reason / administrative error explanation here..."
+                  className="w-full bg-slate-950 border border-slate-850 rounded-lg text-slate-200 p-3 text-sm focus:outline-none focus:border-amber-500 placeholder-slate-600"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-850 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverrideModal(false);
+                  setOverrideReason('');
+                }}
+                className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold rounded-lg text-xs"
+              >
+                Abort
+              </button>
+              <button
+                type="button"
+                disabled={!overrideReason.trim()}
+                onClick={() => {
+                  if (!overrideReason.trim()) return;
+                  setAdminOverrideActive(true);
+                  setShowOverrideModal(false);
+                }}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 text-slate-950 disabled:text-slate-500 font-extrabold rounded-lg text-xs flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+              >
+                <Check size={14} /> Authorize & Apply Override
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

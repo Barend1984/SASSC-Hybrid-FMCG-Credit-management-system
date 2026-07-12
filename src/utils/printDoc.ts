@@ -69,6 +69,11 @@ export const printLegalAgreement = (agreement: Agreement, customer: Customer) =>
   const principalAmount = agreement.goods + agreement.loan;
   const initiationFee = agreement.initiationFee || 0;
   const serviceFee = agreement.serviceFee || 0;
+  const insurancePremium = agreement.insurancePremium || 0;
+  const insuranceTypeStr = agreement.insuranceType === 'none' ? 'None (External Waiver)' :
+                           agreement.insuranceType === 'base' ? 'Mandatory Base Credit Life' :
+                           agreement.insuranceType === 'topup' ? 'Top-Up Structural Credit Life' : 'No Coverage';
+  const vatAmount = agreement.vatAmount || 0;
 
   const html = `
     <!DOCTYPE html>
@@ -259,11 +264,19 @@ export const printLegalAgreement = (agreement: Agreement, customer: Customer) =>
           <td class="value" style="text-align: right;">${formatCurrency(serviceFee)}</td>
         </tr>
         <tr>
+          <td class="label">Credit Life Insurance (${insuranceTypeStr}):</td>
+          <td class="value" style="text-align: right;">${formatCurrency(insurancePremium)}</td>
+        </tr>
+        <tr>
+          <td class="label">15% VAT:</td>
+          <td class="value" style="text-align: right;">${formatCurrency(vatAmount)}</td>
+        </tr>
+        <tr>
           <td class="label">Nominal Annual Interest Rate:</td>
           <td class="value" style="text-align: right;">0.00% (Interest-Free SASSC Pension Welfare Program)</td>
         </tr>
         <tr class="total-row">
-          <td>TOTAL REPAYABLE COST OF CREDIT:</td>
+          <td>TOTAL REPAYABLE COST OF CREDIT (VAT-INCL):</td>
           <td style="text-align: right; color: #b45309;">${totalRepay}</td>
         </tr>
       </table>
@@ -350,6 +363,11 @@ export const printAccountInvoice = (agreement: Agreement, customer: Customer) =>
   const principalAmount = agreement.goods + agreement.loan;
   const initiationFee = agreement.initiationFee || 0;
   const serviceFee = agreement.serviceFee || 0;
+  const insurancePremium = agreement.insurancePremium || 0;
+  const insuranceTypeStr = agreement.insuranceType === 'none' ? 'None (External Waiver)' :
+                           agreement.insuranceType === 'base' ? 'Mandatory Base Credit Life' :
+                           agreement.insuranceType === 'topup' ? 'Top-Up Structural Credit Life' : 'No Coverage';
+  const vatAmount = agreement.vatAmount || 0;
 
   // Render invoice items
   let rows = '';
@@ -585,8 +603,16 @@ export const printAccountInvoice = (agreement: Agreement, customer: Customer) =>
             <span>NCA Approved Monthly Service Fee:</span>
             <span>${formatCurrency(serviceFee)}</span>
           </div>
+          <div class="summary-row">
+            <span>Credit Life Insurance (${insuranceTypeStr}):</span>
+            <span>${formatCurrency(insurancePremium)}</span>
+          </div>
+          <div class="summary-row">
+            <span>15% VAT:</span>
+            <span>${formatCurrency(vatAmount)}</span>
+          </div>
           <div class="summary-row total">
-            <span>Total Repayable Cost:</span>
+            <span>Total Repayable Cost (VAT-Incl):</span>
             <span>${totalRepay}</span>
           </div>
           <div class="summary-row" style="color: #10b981; font-weight: 600;">
@@ -1165,6 +1191,830 @@ export const printAffordabilityDeclaration = (agreement: Agreement, customer: Cu
 
       <div class="watermark">
         Phoenix Regulatory Department | Form NCA-81-1-A | Document Ref: PHOENIX-AFFORD-${agreementNumber} | Generated on ${new Date().toLocaleString('en-ZA')}
+      </div>
+    </body>
+    </html>
+  `;
+  triggerPrint(html);
+};
+
+/**
+ * Prints the Freedom of Choice Mandate under Section 106(4) of the NCA
+ */
+export const printFreedomOfChoiceMandate = (agreement: Agreement, customer: Customer) => {
+  const customerName = `${customer.firstNames} ${customer.surname}`.trim() || customer.name;
+  const agreementNumber = agreement.agrNumber;
+  const agreementDate = formatDateFriendly(agreement.date);
+  const idNum = customer.idNumber || '—';
+  
+  const isExternal = agreement.insuranceType === 'none';
+  const selectedPolicyStr = agreement.insuranceType === 'none' ? 'EXTERNAL INSURANCE POLICY (WAIVER)' :
+                            agreement.insuranceType === 'base' ? 'INTERNAL BASE CREDIT LIFE INSURANCE' :
+                            agreement.insuranceType === 'topup' ? 'INTERNAL TOP-UP STRUCTURAL CREDIT LIFE' : 'NONE';
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Freedom of Choice Mandate - Section 106(4) - ${agreementNumber}</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          color: #1a1a1a;
+          line-height: 1.5;
+          font-size: 11px;
+          margin: 0;
+          padding: 30px;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 25px;
+          border-bottom: 2px solid #334155;
+          padding-bottom: 15px;
+        }
+        .title {
+          font-size: 14px;
+          font-weight: bold;
+          text-transform: uppercase;
+          color: #0f172a;
+        }
+        .subtitle {
+          font-size: 10px;
+          color: #475569;
+          margin-top: 5px;
+          letter-spacing: 0.5px;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 15px 0;
+        }
+        td {
+          padding: 6px;
+          border: 1px solid #cbd5e1;
+          vertical-align: top;
+        }
+        .label {
+          background-color: #f8fafc;
+          font-weight: bold;
+          width: 30%;
+        }
+        .section-title {
+          font-size: 11px;
+          font-weight: bold;
+          text-transform: uppercase;
+          background-color: #0f172a;
+          color: #ffffff;
+          padding: 5px 8px;
+          margin-top: 20px;
+          margin-bottom: 10px;
+        }
+        .terms {
+          text-align: justify;
+          margin-bottom: 20px;
+        }
+        .option-box {
+          border: 1px solid #94a3b8;
+          border-radius: 4px;
+          padding: 10px;
+          margin: 8px 0;
+          background-color: #f8fafc;
+        }
+        .signatures {
+          margin-top: 40px;
+        }
+        .sig-row {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 30px;
+        }
+        .sig-box {
+          width: 45%;
+          border-top: 1px solid #1e293b;
+          padding-top: 8px;
+        }
+        .watermark {
+          text-align: center;
+          font-size: 8px;
+          color: #94a3b8;
+          margin-top: 40px;
+          border-top: 1px dashed #cbd5e1;
+          padding-top: 10px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">Freedom of Choice Mandate</div>
+        <div class="subtitle">SECTION 106(4) OF THE NATIONAL CREDIT ACT, NO. 34 OF 2005</div>
+      </div>
+
+      <table>
+        <tr>
+          <td class="label">Consumer Full Names:</td>
+          <td>${customerName}</td>
+          <td class="label">Identity Number:</td>
+          <td>${idNum}</td>
+        </tr>
+        <tr>
+          <td class="label">Credit Provider:</td>
+          <td>SASSC Credit Ltd / Phoenix Financial Services</td>
+          <td class="label">Agreement Number:</td>
+          <td><strong>${agreementNumber}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">Date of Election:</td>
+          <td>${agreementDate}</td>
+          <td class="label">Selected Policy:</td>
+          <td><strong>${selectedPolicyStr}</strong></td>
+        </tr>
+      </table>
+
+      <div class="section-title">1. Statutory Declaration of Consumer Rights</div>
+      <div class="terms">
+        In terms of Section 106(4) of the National Credit Act (Act 34 of 2005), where a credit provider requires a consumer to maintain credit life insurance, the consumer must be given an explicit, free choice to either:
+        <ul>
+          <li><strong>Option A:</strong> Elect to purchase a policy offered by the credit provider (our internal statutory program); or</li>
+          <li><strong>Option B:</strong> Elect to provide an existing or external policy of their own choice, naming the credit provider as first loss payee up to the value of the outstanding debt.</li>
+        </ul>
+        The Credit Provider is strictly prohibited from forcing, coercing, or auto-enrolling a consumer into an internal policy without presenting this Freedom of Choice Mandate first.
+      </div>
+
+      <div class="section-title">2. Consumer Election & Acknowledgement</div>
+      <div class="terms">
+        I, the undersigned, <strong>${customerName}</strong>, do hereby declare that I was fully informed of my rights in terms of Section 106(4) of the National Credit Act before entering into this credit agreement. I make the following choice:
+        
+        <div class="option-box">
+          <strong>[ ${!isExternal ? '✓' : ' &nbsp; '} ] I ELECT TO PURCHASE THE CREDIT PROVIDER'S INSURANCE</strong><br/>
+          I authorize SASSC/Phoenix to issue the selected credit life insurance policy on my behalf. I understand that the initial monthly premium is specified in my Form 20 Quote and is itemized in my invoice on a declining-balance basis.
+        </div>
+
+        <div class="option-box">
+          <strong>[ ${isExternal ? '✓' : ' &nbsp; '} ] I ELECT TO PROVIDE AN EXTERNAL INSURANCE POLICY</strong><br/>
+          I waive the internal coverage program. I undertake to submit details of my own external policy and sign the mandatory <strong>Loss Payee Nomination Mandate</strong> to secure SASSC/Phoenix as the primary loss beneficiary up to the outstanding balance.
+        </div>
+      </div>
+
+      <div class="signatures">
+        <div class="sig-row">
+          <div class="sig-box">
+            <strong>CONSUMER / DEBTOR SIGNATURE</strong><br/>
+            Name: ${customerName}<br/>
+            Date: ${agreementDate}
+          </div>
+          <div class="sig-box">
+            <strong>FOR CREDIT PROVIDER</strong><br/>
+            Phoenix Financial Services (Pty) Ltd<br/>
+            Date: ${agreementDate}
+          </div>
+        </div>
+      </div>
+
+      <div class="watermark">
+        Phoenix Legal & Compliance Department | NCR/CP/10452 | Document Ref: SEC106-CHOICE-${agreementNumber}
+      </div>
+    </body>
+    </html>
+  `;
+  triggerPrint(html);
+};
+
+/**
+ * Prints the Loss Payee Nomination Mandate for external policies
+ */
+export const printLossPayeeNominationMandate = (agreement: Agreement, customer: Customer) => {
+  const customerName = `${customer.firstNames} ${customer.surname}`.trim() || customer.name;
+  const agreementNumber = agreement.agrNumber;
+  const agreementDate = formatDateFriendly(agreement.date);
+  const idNum = customer.idNumber || '—';
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Loss Payee Nomination Mandate - ${agreementNumber}</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          color: #1a1a1a;
+          line-height: 1.5;
+          font-size: 11px;
+          margin: 0;
+          padding: 30px;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 25px;
+          border-bottom: 2px solid #334155;
+          padding-bottom: 15px;
+        }
+        .title {
+          font-size: 14px;
+          font-weight: bold;
+          text-transform: uppercase;
+          color: #0f172a;
+        }
+        .subtitle {
+          font-size: 10px;
+          color: #475569;
+          margin-top: 5px;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 15px 0;
+        }
+        td {
+          padding: 6px;
+          border: 1px solid #cbd5e1;
+          vertical-align: top;
+        }
+        .label {
+          background-color: #f8fafc;
+          font-weight: bold;
+          width: 30%;
+        }
+        .section-title {
+          font-size: 11px;
+          font-weight: bold;
+          text-transform: uppercase;
+          background-color: #0f172a;
+          color: #ffffff;
+          padding: 5px 8px;
+          margin-top: 20px;
+          margin-bottom: 10px;
+        }
+        .terms {
+          text-align: justify;
+          margin-bottom: 20px;
+        }
+        .signatures {
+          margin-top: 45px;
+        }
+        .sig-row {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 30px;
+        }
+        .sig-box {
+          width: 45%;
+          border-top: 1px solid #1e293b;
+          padding-top: 8px;
+        }
+        .watermark {
+          text-align: center;
+          font-size: 8px;
+          color: #94a3b8;
+          margin-top: 50px;
+          border-top: 1px dashed #cbd5e1;
+          padding-top: 10px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">Loss Payee Nomination Mandate</div>
+        <div class="subtitle">EXTERNAL CREDIT LIFE INSURANCE POLICY BENEFICIARY DESIGNATION</div>
+      </div>
+
+      <table>
+        <tr>
+          <td class="label">Policy Holder Name:</td>
+          <td>${customerName}</td>
+          <td class="label">Identity Number:</td>
+          <td>${idNum}</td>
+        </tr>
+        <tr>
+          <td class="label">Designated Creditor:</td>
+          <td>SASSC / Phoenix Financial Services (Pty) Ltd</td>
+          <td class="label">Credit Agreement Ref:</td>
+          <td><strong>${agreementNumber}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">External Insurer:</td>
+          <td>__________________________________</td>
+          <td class="label">External Policy Number:</td>
+          <td>__________________________________</td>
+        </tr>
+      </table>
+
+      <div class="section-title">1. Legal Instruction to External Insurer</div>
+      <div class="terms">
+        In terms of Section 106(4) of the National Credit Act, I hereby instruct and mandate the above-mentioned external insurer to register <strong>Phoenix Financial Services (Pty) Ltd</strong> (or its parent entity, <strong>SASSC Pty Ltd</strong>) as the <strong>Sole Primary Loss Payee</strong> and beneficiary on my credit insurance policy.
+        <br/><br/>
+        In the event of my death, permanent disability, temporary disability, or retrenchment during the currency of my indebtedness to SASSC/Phoenix, any benefits or claim payouts payable under this policy must first be paid directly to SASSC/Phoenix up to the full value of my remaining, outstanding debt liability.
+      </div>
+
+      <div class="section-title">2. Underwriting Authority & Waiver</div>
+      <div class="terms">
+        I hereby authorize SASSC/Phoenix to query, audit, verify and verify the status, premiums, and validity of my external insurance policy with my insurer at any stage. Should I fail to maintain this external policy, or should it lapse, I understand that SASSC/Phoenix reserves the right to register me on the internal statutory Credit Life Insurance program to protect the outstanding financial welfare loan.
+      </div>
+
+      <div class="signatures">
+        <div class="sig-row">
+          <div class="sig-box">
+            <strong>CONSUMER / POLICY HOLDER SIGNATURE</strong><br/>
+            Name: ${customerName}<br/>
+            Date: ${agreementDate}
+          </div>
+          <div class="sig-box">
+            <strong>FOR REGISTERED CREDIT PROVIDER</strong><br/>
+            Phoenix Financial Services (Pty) Ltd<br/>
+            Date: ${agreementDate}
+          </div>
+        </div>
+      </div>
+
+      <div class="watermark">
+        Phoenix Legal & Compliance Department | NCR/CP/10452 | Document Ref: SEC106-LOSSPAYEE-${agreementNumber}
+      </div>
+    </body>
+    </html>
+  `;
+  triggerPrint(html);
+};
+
+/**
+ * Prints the Form 20 Pre-Agreement Statement & Quotation
+ */
+export const printForm20Quotation = (agreement: Agreement, customer: Customer) => {
+  const customerName = `${customer.firstNames} ${customer.surname}`.trim() || customer.name;
+  const agreementNumber = agreement.agrNumber;
+  const agreementDate = formatDateFriendly(agreement.date);
+  const repaymentDate = formatDateFriendly(agreement.dueDate);
+  const idNum = customer.idNumber || '—';
+
+  const goods = agreement.goods || 0;
+  const loan = agreement.loan || 0;
+  const principal = goods + loan;
+  const initiation = agreement.initiationFee || 0;
+  const service = agreement.serviceFee || 0;
+  const insurance = agreement.insurancePremium || 0;
+  const vat = agreement.vatAmount || 0;
+  const total = agreement.totalAmount || 0;
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Form 20 Pre-Agreement Statement & Quotation - ${agreementNumber}</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          color: #1a1a1a;
+          line-height: 1.4;
+          font-size: 11px;
+          margin: 0;
+          padding: 30px;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 20px;
+          border-bottom: 2px solid #0f172a;
+          padding-bottom: 10px;
+        }
+        .title {
+          font-size: 14px;
+          font-weight: bold;
+          text-transform: uppercase;
+          color: #0f172a;
+        }
+        .subtitle {
+          font-size: 10px;
+          color: #475569;
+          margin-top: 3px;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 15px 0;
+        }
+        td, th {
+          padding: 6px;
+          border: 1px solid #cbd5e1;
+          text-align: left;
+        }
+        th {
+          background-color: #0f172a;
+          color: #ffffff;
+          font-weight: bold;
+        }
+        .label {
+          background-color: #f8fafc;
+          font-weight: bold;
+          width: 35%;
+        }
+        .section-title {
+          font-size: 11px;
+          font-weight: bold;
+          text-transform: uppercase;
+          background-color: #475569;
+          color: #ffffff;
+          padding: 5px;
+          margin-top: 15px;
+          margin-bottom: 5px;
+        }
+        .right-text {
+          text-align: right;
+        }
+        .bold-total {
+          font-weight: bold;
+          font-size: 12px;
+          background-color: #f1f5f9;
+        }
+        .terms {
+          font-size: 9.5px;
+          color: #334155;
+          text-align: justify;
+          margin-top: 15px;
+        }
+        .signatures {
+          margin-top: 35px;
+        }
+        .sig-row {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 25px;
+        }
+        .sig-box {
+          width: 45%;
+          border-top: 1px solid #0f172a;
+          padding-top: 5px;
+        }
+        .watermark {
+          text-align: center;
+          font-size: 8px;
+          color: #94a3b8;
+          margin-top: 40px;
+          border-top: 1px dashed #cbd5e1;
+          padding-top: 10px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">Form 20 Pre-Agreement Statement & Quotation</div>
+        <div class="subtitle">NATIONAL CREDIT REGULATOR COMPLIANT DISCLOSURE DOCUMENT</div>
+      </div>
+
+      <table>
+        <tr>
+          <td class="label">Consumer Full Names:</td>
+          <td>${customerName}</td>
+          <td class="label">ID / Passport Number:</td>
+          <td>${idNum}</td>
+        </tr>
+        <tr>
+          <td class="label">Credit Provider:</td>
+          <td>Phoenix Financial Services (Pty) Ltd</td>
+          <td class="label">NCR Registration Number:</td>
+          <td>NCR/CP/10452</td>
+        </tr>
+        <tr>
+          <td class="label">Quote Date:</td>
+          <td>${agreementDate}</td>
+          <td class="label">Repayment Date:</td>
+          <td><strong>${repaymentDate}</strong></td>
+        </tr>
+      </table>
+
+      <div class="section-title">1. Itemised Cost Breakdown & Disclosure</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Cost Element Description</th>
+            <th class="right-text">Value (ZAR)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="label">Principal Goods Capital (Groceries):</td>
+            <td class="right-text">${formatCurrency(goods)}</td>
+          </tr>
+          <tr>
+            <td class="label">Principal Cash Loan Advance:</td>
+            <td class="right-text">${formatCurrency(loan)}</td>
+          </tr>
+          <tr style="font-weight: bold;">
+            <td class="label">Total Capital Principal Debt:</td>
+            <td class="right-text">${formatCurrency(principal)}</td>
+          </tr>
+          <tr>
+            <td class="label">NCA Initiation Fee (10% on Capital):</td>
+            <td class="right-text">${formatCurrency(initiation)}</td>
+          </tr>
+          <tr>
+            <td class="label">NCA Monthly Credit Service Fee:</td>
+            <td class="right-text">${formatCurrency(service)}</td>
+          </tr>
+          <tr>
+            <td class="label">Credit Life Insurance (NCA Declining Balance Basis):</td>
+            <td class="right-text">${formatCurrency(insurance)}</td>
+          </tr>
+          <tr>
+            <td class="label">Welfare Welfare Program Interest Rate:</td>
+            <td class="right-text">R 0.00 (0.00% Interest-Free)</td>
+          </tr>
+          <tr>
+            <td class="label">15% VAT:</td>
+            <td class="right-text">${formatCurrency(vat)}</td>
+          </tr>
+          <tr class="bold-total">
+            <td>TOTAL REPAYABLE COST OF CREDIT:</td>
+            <td class="right-text" style="color: #b45309;">${formatCurrency(total)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="section-title">2. Quotation Validity & Terms</div>
+      <div class="terms">
+        This Pre-Agreement Statement and Quotation is valid and binding on the Credit Provider for a statutory period of <strong>5 business days</strong> from the Quote Date specified above. You are under no obligation to accept this credit. If accepted, this quote will serve as the financial appendix to your Acknowledgement of Debt (AOD) agreement.
+        <br/><br/>
+        There are no hidden costs, annual charges, or penalty rates on this interest-free social welfare package.
+      </div>
+
+      <div class="signatures">
+        <div class="sig-row">
+          <div class="sig-box">
+            <strong>CONSUMER ACCEPTANCE SIGNATURE</strong><br/>
+            I hereby accept this statutory quotation.<br/>
+            Date: ${agreementDate}
+          </div>
+          <div class="sig-box">
+            <strong>AUTHORIZED REPRESENTATIVE</strong><br/>
+            For Phoenix Financial Services (Pty) Ltd<br/>
+            Date: ${agreementDate}
+          </div>
+        </div>
+      </div>
+
+      <div class="watermark">
+        Phoenix Financial Services (Pty) Ltd | Registered National Credit Provider | NCR/CP/10452
+      </div>
+    </body>
+    </html>
+  `;
+  triggerPrint(html);
+};
+
+/**
+ * Prints a complete identity profile summary sheet for debt enforcement or collections
+ */
+export const printCustomerIdentityProfile = (customer: Customer, agreements: Agreement[]) => {
+  const customerName = `${customer.firstNames} ${customer.surname}`.trim() || customer.name;
+  const fileNo = customer.fileNo || '—';
+  const phone = customer.phone || '—';
+  const workPhone = customer.workPhone || '—';
+  const email = customer.email || '—';
+  const idNumber = customer.idNumber || '—';
+  const address = customer.address || '—';
+  const workAddress = customer.workAddress || '—';
+  const employer = customer.employer || '—';
+  const salaryDay = customer.salaryDay || '—';
+  const incomeSource = customer.incomeSource || '—';
+  const church = customer.church || '—';
+  const pastor = customer.pastor || '—';
+  const notes = customer.notes || '—';
+  
+  const customerAgreements = agreements.filter(a => a.customerId === customer.id);
+  const totalExposure = customerAgreements.reduce((sum, a) => sum + (a.status !== 'paid' ? a.balance : 0), 0);
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Default Collection Portfolio - File #${fileNo}</title>
+      <style>
+        body {
+          font-family: 'Helvetica Neue', Arial, sans-serif;
+          color: #1a1a1a;
+          line-height: 1.4;
+          font-size: 11px;
+          margin: 0;
+          padding: 30px;
+        }
+        .header {
+          display: flex;
+          justify-content: space-between;
+          border-bottom: 2px solid #000;
+          padding-bottom: 15px;
+          margin-bottom: 20px;
+        }
+        .header h1 {
+          font-size: 18px;
+          margin: 0;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+        }
+        .header h2 {
+          font-size: 12px;
+          margin: 5px 0 0 0;
+          color: #4b5563;
+        }
+        .profile-container {
+          display: flex;
+          gap: 20px;
+          margin-bottom: 20px;
+        }
+        .photo-box {
+          width: 150px;
+          height: 150px;
+          border: 2px solid #1a1a1a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f3f4f6;
+          box-sizing: border-box;
+          flex-shrink: 0;
+        }
+        .photo-box img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .details-box {
+          flex-grow: 1;
+        }
+        .section-title {
+          font-size: 11px;
+          font-weight: bold;
+          text-transform: uppercase;
+          background: #f3f4f6;
+          padding: 4px 8px;
+          margin-top: 15px;
+          margin-bottom: 8px;
+          border-left: 3px solid #1a1a1a;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 10px;
+        }
+        th, td {
+          padding: 6px 8px;
+          text-align: left;
+          vertical-align: top;
+        }
+        td.label {
+          font-weight: bold;
+          width: 30%;
+          color: #374151;
+        }
+        .agreements-table th {
+          background: #1a1a1a;
+          color: #fff;
+          font-size: 9px;
+          text-transform: uppercase;
+        }
+        .agreements-table td, .agreements-table th {
+          border: 1px solid #e5e7eb;
+          padding: 5px;
+        }
+        .right {
+          text-align: right;
+        }
+        .danger-alert {
+          border: 1px solid #dc2626;
+          background: #fef2f2;
+          color: #991b1b;
+          padding: 8px;
+          border-radius: 4px;
+          font-weight: bold;
+          margin-bottom: 15px;
+          font-size: 10px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div>
+          <h1>Phoenix Financial Services (Pty) Ltd</h1>
+          <h2>Customer Identity & Collection Dossier (NCA Compliance)</h2>
+        </div>
+        <div class="right">
+          <strong>FILE NO: #${fileNo}</strong><br/>
+          Date Generated: ${new Date().toLocaleDateString('en-ZA')}
+        </div>
+      </div>
+
+      <div class="danger-alert">
+        CONFIDENTIAL COLLECTION PORTFOLIO — FOR DEBT RECOVERY ENFORCEMENT PURPOSES ONLY. DO NOT CONVEY TO PUBLIC REPOSITORIES.
+      </div>
+
+      <div class="profile-container">
+        <div class="photo-box">
+          ${customer.photoUrl ? `<img src="${customer.photoUrl}" alt="Identity Photo" />` : '<div style="color: #9ca3af; text-align: center; font-size: 10px;">NO PROFILE PHOTO<br/>UPLOADED</div>'}
+        </div>
+        <div class="details-box">
+          <div class="section-title" style="margin-top: 0;">Personal Identity Details</div>
+          <table>
+            <tr>
+              <td class="label">Full Name:</td>
+              <td>${customerName}</td>
+              <td class="label">ID Number:</td>
+              <td>${idNumber}</td>
+            </tr>
+            <tr>
+              <td class="label">Contact Cell:</td>
+              <td>${phone}</td>
+              <td class="label">Email Address:</td>
+              <td>${email}</td>
+            </tr>
+            <tr>
+              <td class="label">Physical Address:</td>
+              <td colspan="3">${address}</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="section-title">Employment & Financial Profile</div>
+      <table>
+        <tr>
+          <td class="label">Employer Name:</td>
+          <td>${employer}</td>
+          <td class="label">Work Contact:</td>
+          <td>${workPhone}</td>
+        </tr>
+        <tr>
+          <td class="label">Salary Payment Day:</td>
+          <td>${salaryDay}</td>
+          <td class="label">Income Source:</td>
+          <td>${incomeSource}</td>
+        </tr>
+        <tr>
+          <td class="label">Work Address:</td>
+          <td colspan="3">${workAddress}</td>
+        </tr>
+        <tr>
+          <td class="label">Social / Church:</td>
+          <td>${church} (Pastor: ${pastor})</td>
+          <td class="label">Credit Limit Approved:</td>
+          <td>${(customer.creditLimit || 0).toFixed(2)}</td>
+        </tr>
+      </table>
+
+      <div class="section-title">Credit Ledger Summary & Default Exposure</div>
+      <p style="margin: 0 0 8px 0;">Total Outstanding Exposure: <strong>R ${totalExposure.toFixed(2)}</strong> across <strong>${customerAgreements.length}</strong> contract(s).</p>
+      
+      <table class="agreements-table">
+        <thead>
+          <tr>
+            <th>Agreement No</th>
+            <th>Date Signed</th>
+            <th>Due Date</th>
+            <th>Approved Amt</th>
+            <th>Current Balance</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${customerAgreements.length === 0 ? `
+            <tr>
+              <td colspan="6" style="text-align: center; color: #6b7280;">No agreements recorded for this customer.</td>
+            </tr>
+          ` : customerAgreements.map(a => `
+            <tr>
+              <td>${a.agrNumber}</td>
+              <td>${a.date}</td>
+              <td>${a.dueDate}</td>
+              <td>R ${(a.totalAmount || 0).toFixed(2)}</td>
+              <td class="right" style="font-weight: bold; color: ${a.balance > 0 ? '#b91c1c' : '#047857'};">R ${(a.balance || 0).toFixed(2)}</td>
+              <td style="text-transform: uppercase; font-weight: bold; color: ${a.status === 'overdue' ? '#b91c1c' : '#374151'}">${a.status}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      ${customer.bank ? `
+        <div class="section-title">Verified Bank Account Details (Salary Routing)</div>
+        <table>
+          <tr>
+            <td class="label">Bank Name:</td>
+            <td>${customer.bank.name || '—'}</td>
+            <td class="label">Account Number:</td>
+            <td>${customer.bank.accountNumber || '—'}</td>
+          </tr>
+          <tr>
+            <td class="label">Branch Route Code:</td>
+            <td>${customer.bank.branchCode || '—'}</td>
+            <td class="label">Account Holder:</td>
+            <td>${customer.bank.holder || '—'}</td>
+          </tr>
+        </table>
+      ` : ''}
+
+      <div class="section-title">Internal Credit Controller & Enforcement Notes</div>
+      <div style="border: 1px solid #d1d5db; padding: 10px; background: #f9fafb; min-height: 50px; font-style: italic;">
+        ${notes}
+      </div>
+
+      <div style="margin-top: 30px; text-align: center; color: #6b7280; font-size: 9px; border-top: 1px dashed #d1d5db; padding-top: 10px;">
+        Phoenix Financial Services (Pty) Ltd | National Credit Regulator Registration Number: NCR/CP/10452 | Strictly Confidential System Generated Dossier
       </div>
     </body>
     </html>

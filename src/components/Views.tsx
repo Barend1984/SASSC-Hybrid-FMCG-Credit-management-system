@@ -9,11 +9,21 @@ import {
   checkCustomerOverdue, getPermissionList, getRolePermissions, 
   calcNcaFees, hashPassword, seedSampleData, loadDBObj, saveDBObj 
 } from '../utils/database';
+import {
+  calculateCashOnHand,
+  calculateBankBalance,
+  calculateInventoryCost,
+  calculateCapitalReconciliation,
+  calculateLoanPortfolio,
+  calculateCreditIssued,
+  calculateCustomerPayments,
+  calculateExpenseLedger
+} from '../utils/financialEngine';
 import { 
   AlertTriangle, CreditCard, Calendar, BarChart3, Database, 
   Trash2, ShieldCheck, Key, Lock, Plus, Users, PlusCircle, CheckCircle, Save,
   ChefHat, Utensils, BookOpen, Info, ClipboardList, FileSpreadsheet, RefreshCw, 
-  DollarSign, History, Trash, AlertCircle, TrendingUp, Eye, Download
+  DollarSign, History, Trash, AlertCircle, TrendingUp, Eye, Download, Edit
 } from 'lucide-react';
 import DocumentPreviewModal from './DocumentPreviewModal';
 
@@ -23,9 +33,92 @@ import DocumentPreviewModal from './DocumentPreviewModal';
 interface PaymentsViewProps {
   payments: Payment[];
   customers: Customer[];
+  currentUser: any;
+  onRefreshDB: () => void;
 }
-export function PaymentsView({ payments, customers }: PaymentsViewProps) {
+export function PaymentsView({ payments, customers, currentUser, onRefreshDB }: PaymentsViewProps) {
   const getCustName = (id: string) => customers.find(c => c.id === id)?.name || '—';
+
+  // State for editing payment
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editMethod, setEditMethod] = useState<'cash' | 'card' | 'eft'>('cash');
+  const [editRef, setEditRef] = useState('');
+  const [editNote, setEditNote] = useState('');
+
+  const handleStartEdit = (p: Payment) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isToday = p.date === todayStr;
+
+    if (!isToday && currentUser?.role !== 'main_admin') {
+      alert("⛔ Access Denied: Payments received on a previous date can only be edited by an Administrator.");
+      return;
+    }
+
+    setEditingPayment(p);
+    setEditDate(p.date);
+    setEditAmount(p.amount.toString());
+    setEditMethod(p.method);
+    setEditRef(p.reference || '');
+    setEditNote(p.note || '');
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPayment) return;
+
+    const newAmount = parseFloat(editAmount) || 0;
+    if (newAmount <= 0) {
+      alert("Please enter a valid positive payment sum.");
+      return;
+    }
+
+    // Load lists
+    const allAgreements = loadDBList<Agreement>('agreements');
+    const allPayments = loadDBList<Payment>('payments');
+
+    // Find targets
+    const matchPayment = allPayments.find(py => py.id === editingPayment.id);
+    if (!matchPayment) {
+      alert("Payment not found.");
+      return;
+    }
+
+    const matchAgreement = allAgreements.find(ag => ag.id === editingPayment.agrId);
+    if (matchAgreement) {
+      const oldAmount = editingPayment.amount;
+      const diff = newAmount - oldAmount;
+
+      // Adjust contract paid balance
+      matchAgreement.paid = Math.round((matchAgreement.paid + diff) * 100) / 100;
+      matchAgreement.balance = Math.max(0, Math.round((matchAgreement.totalAmount - matchAgreement.paid) * 100) / 100);
+
+      // Adjust contract status based on new balance
+      if (matchAgreement.balance <= 0) {
+        matchAgreement.status = 'paid';
+      } else {
+        const todayStr = new Date().toISOString().split('T')[0];
+        matchAgreement.status = matchAgreement.dueDate < todayStr ? 'overdue' : 'active';
+      }
+      matchAgreement.updated = new Date().toISOString();
+    }
+
+    // Update payment
+    matchPayment.date = editDate;
+    matchPayment.amount = newAmount;
+    matchPayment.method = editMethod;
+    matchPayment.reference = editRef;
+    matchPayment.note = editNote;
+
+    // Save
+    saveDBList('payments', allPayments);
+    saveDBList('agreements', allAgreements);
+
+    alert("Payment allocation successfully updated and contract accounts balanced.");
+    setEditingPayment(null);
+    onRefreshDB();
+  };
   
   return (
     <div className="space-y-6">
@@ -46,30 +139,170 @@ export function PaymentsView({ payments, customers }: PaymentsViewProps) {
                 <th className="p-3.5">Bank Reference</th>
                 <th className="p-3.5">Auditing Note</th>
                 <th className="p-3.5 text-right">Sum (ZAR)</th>
+                <th className="p-3.5 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 text-slate-300">
               {payments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500">No installments recorded. Allocations will appear here.</td>
+                  <td colSpan={8} className="p-8 text-center text-slate-500">No installments recorded. Allocations will appear here.</td>
                 </tr>
               ) : (
-                payments.slice().reverse().map(p => (
-                  <tr key={p.id} className="hover:bg-slate-800/10">
-                    <td className="p-3.5 text-slate-500">{p.date}</td>
-                    <td className="p-3.5 font-semibold text-slate-200">{getCustName(p.customerId)}</td>
-                    <td className="p-3.5 font-bold text-amber-500">{p.agrNumber}</td>
-                    <td className="p-3.5 capitalize text-slate-400">{p.method}</td>
-                    <td className="p-3.5 text-slate-500 font-mono">{p.reference || '—'}</td>
-                    <td className="p-3.5 text-slate-400 max-w-xs truncate">{p.note || '—'}</td>
-                    <td className="p-3.5 text-right text-emerald-400 font-black">R {p.amount.toFixed(2)}</td>
-                  </tr>
-                ))
+                payments.slice().reverse().map(p => {
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  const isToday = p.date === todayStr;
+                  const canEdit = isToday || currentUser?.role === 'main_admin';
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-800/10">
+                      <td className="p-3.5 text-slate-500">{p.date}</td>
+                      <td className="p-3.5 font-semibold text-slate-200">{getCustName(p.customerId)}</td>
+                      <td className="p-3.5 font-bold text-amber-500">{p.agrNumber}</td>
+                      <td className="p-3.5 capitalize text-slate-400">{p.method}</td>
+                      <td className="p-3.5 text-slate-500 font-mono">{p.reference || '—'}</td>
+                      <td className="p-3.5 text-slate-400 max-w-xs truncate">{p.note || '—'}</td>
+                      <td className="p-3.5 text-right text-emerald-400 font-black">R {p.amount.toFixed(2)}</td>
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => handleStartEdit(p)}
+                          className={`px-2 py-1 rounded font-bold text-[10px] transition flex items-center justify-center gap-1 mx-auto ${
+                            canEdit
+                              ? 'bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 cursor-pointer'
+                              : 'bg-slate-950 text-slate-600 cursor-not-allowed'
+                          }`}
+                          title={canEdit ? 'Edit Repayment Record' : 'Previous date record (Admin required)'}
+                        >
+                          {canEdit ? <Edit size={10} /> : <Lock size={10} />}
+                          <span>{canEdit ? 'Edit' : 'Locked'}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Payment Edit Modal */}
+      {editingPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+            <div className="px-6 py-4 bg-slate-950/60 border-b border-slate-850 flex items-center justify-between">
+              <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                <Edit className="text-amber-500 h-4.5 w-4.5" />
+                <span>Edit Repayment Allocation</span>
+              </h3>
+              <button 
+                onClick={() => setEditingPayment(null)}
+                className="text-slate-400 hover:text-white text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit}>
+              <div className="p-6 space-y-4">
+                <div className="bg-slate-950 border border-slate-850 rounded-xl p-3 text-xs text-slate-400 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Agreement:</span>
+                    <span className="font-bold text-amber-500">{editingPayment.agrNumber}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Customer:</span>
+                    <span className="font-bold text-slate-200">{getCustName(editingPayment.customerId)}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Repayment Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg text-slate-200 p-2.5 text-xs focus:outline-none focus:border-amber-500"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Payment Amount (ZAR)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg text-slate-200 p-2.5 text-xs focus:outline-none focus:border-amber-500"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Payment Method
+                  </label>
+                  <select
+                    value={editMethod}
+                    onChange={(e) => setEditMethod(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg text-slate-200 p-2.5 text-xs focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="eft">EFT Bank Transfer</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    EFT / Bank Reference
+                  </label>
+                  <input
+                    type="text"
+                    value={editRef}
+                    onChange={(e) => setEditRef(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg text-slate-200 p-2.5 text-xs focus:outline-none focus:border-amber-500"
+                    placeholder="Reference number"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Auditing Note
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editNote}
+                    onChange={(e) => setEditNote(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg text-slate-200 p-2.5 text-xs focus:outline-none focus:border-amber-500"
+                    placeholder="Note for audit logs"
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-850 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingPayment(null)}
+                  className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold rounded-lg text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold rounded-lg text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <Save size={14} /> Save Allocation
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -577,69 +810,15 @@ export function StockView({ currentUser }: { currentUser?: any }) {
     const currentStock = loadDBList<Product>('stock');
     const currentWriteOffs = loadDBList<WriteOff>('writeOffs');
 
-    // A. Cash on Hand (cumulative till cash drawer balance)
-    const totalCashSales = salesList
-      .filter(s => s.method?.toLowerCase() === 'cash')
-      .reduce((sum, s) => sum + (s.total || 0), 0);
-
-    const totalCashPayments = paysList
-      .filter(p => p.method?.toLowerCase() === 'cash')
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    const totalManualIn = cashMovements
-      .filter(m => m.type === 'cash_in')
-      .reduce((sum, m) => sum + (m.amount || 0), 0);
-
-    const totalManualOut = cashMovements
-      .filter(m => ['cash_out', 'expense', 'stock_purchase'].includes(m.type))
-      .reduce((sum, m) => sum + (m.amount || 0), 0);
-
-    const totalBankDeposits = cashMovements
-      .filter(m => m.type === 'bank_deposit')
-      .reduce((sum, m) => sum + (m.amount || 0), 0);
-
-    const totalOpeningCash = cashDays.reduce((sum, d) => sum + (d.openingCash || 0), 0);
-
-    const cashOnHand = totalOpeningCash + totalCashSales + totalCashPayments + totalManualIn - totalManualOut - totalBankDeposits;
-
-    // B. Stock Cost (cumulative value of currently held stock)
-    const stockCost = currentStock.reduce((sum, p) => sum + ((p.qty || 0) * (p.buyPrice || 0)), 0);
-
-    // C. Accounts Cost of Credit (outstanding receivable balance)
-    const accountsCredit = agreements
-      .filter(a => a.status === 'active' || a.status === 'overdue')
-      .reduce((sum, a) => sum + (a.balance || 0), 0);
-
-    // D. Cash in Bank (money banked + digital settlement methods)
-    const bankSales = salesList
-      .filter(s => ['eft', 'bank', 'card'].includes(s.method?.toLowerCase() || ''))
-      .reduce((sum, s) => sum + (s.total || 0), 0);
-
-    const bankPayments = paysList
-      .filter(p => ['eft', 'bank', 'card'].includes(p.method?.toLowerCase() || ''))
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    const cashInBank = totalBankDeposits + bankSales + bankPayments;
-
-    // E. Cash Out (total manual expenses & purchases logged)
-    const cashOut = totalManualOut;
-
-    // F. Total Written off Loss (damaged or written off items)
-    const totalWriteOffLoss = currentWriteOffs.reduce((sum, w) => sum + (w.lossValue || 0), 0);
-
-    // G. Total Financial State formula:
-    // (cash on hand + stock cost + accounts cost of credit + cash in bank - cash out - writeoff loss)
-    const totalFinancialState = cashOnHand + stockCost + accountsCredit + cashInBank - cashOut - totalWriteOffLoss;
-
-    return {
-      cashOnHand,
-      stockCost,
-      accountsCredit,
-      cashInBank,
-      cashOut,
-      totalWriteOffLoss,
-      totalFinancialState
-    };
+    return calculateCapitalReconciliation(
+      salesList,
+      paysList,
+      cashMovements,
+      cashDays,
+      agreements,
+      currentStock,
+      currentWriteOffs
+    );
   };
 
   // STOCK TAKE HANDLERS
@@ -2114,6 +2293,19 @@ export function ReportsView() {
           totalBal.toFixed(2)
         ]);
       }
+    } else if (reportType === 'override_logs') {
+      const overrides = loadDBList<any>('override_logs');
+      const filtered = overrides.filter(o => o.date >= dateFrom && o.date <= dateTo);
+      headers = ['Date', 'Customer Name', 'File No', 'Type', 'Overridden By', 'Arrears Balance (ZAR)', 'Compulsory Note'];
+      rows = filtered.map(o => [
+        o.date,
+        o.customerName,
+        o.fileNo || '—',
+        o.type === 'pos_override' ? 'POS Retail Override' : 'Credit Wizard Override',
+        o.overriddenByName || o.overriddenBy || 'Admin',
+        (o.outstandingBalance || 0).toFixed(2),
+        o.reason || '—'
+      ]);
     }
 
     return { headers, rows, fileName };
@@ -2176,6 +2368,7 @@ export function ReportsView() {
             <option value="agreements">Unified Credit Agreements Issued</option>
             <option value="payments">Repayments & Installments Received</option>
             <option value="accounts_due">Accounts Due / Repayments Ledger</option>
+            <option value="override_logs">Compulsory Administrative Override Logs</option>
           </select>
         </div>
         <div className="form-group">
@@ -2211,6 +2404,12 @@ export function ReportsView() {
           <div>
             <div className="text-sm font-semibold text-slate-300 mb-2">Accounts Due Ledger Statistics</div>
             <p>Ready for download. Total active/overdue credit balances due in selected dates: <strong>{agreements.filter(a => a.dueDate >= dateFrom && a.dueDate <= dateTo && a.balance > 0).length}</strong></p>
+          </div>
+        )}
+        {reportType === 'override_logs' && (
+          <div>
+            <div className="text-sm font-semibold text-slate-300 mb-2">Administrative Override Audit Statistics</div>
+            <p>Ready for download. Total audited override exceptions logged: <strong>{loadDBList<any>('override_logs').filter(o => o.date >= dateFrom && o.date <= dateTo).length}</strong></p>
           </div>
         )}
       </div>
@@ -2331,21 +2530,13 @@ export function CashControlView({ activeDay, onRefreshDB, currentUser }: CashCon
       return;
     }
 
-    // Calculations
-    const cashSales = loadDBList<Sale>('sales')
-      .filter(s => s.date === activeDay.date && s.method === 'cash')
-      .reduce((sum, s) => sum + s.total, 0);
-
-    const cashPays = loadDBList<Payment>('payments')
-      .filter(p => p.date === activeDay.date && p.method === 'cash')
-      .reduce((sum, p) => sum + p.amount, 0);
-
-    const moves = loadDBList<CashMovement>('cashMovements').filter(m => m.cashDayId === activeDay.id);
-    const manualIn = moves.filter(m => m.type === 'cash_in').reduce((sum, m) => sum + m.amount, 0);
-    const manualOut = moves.filter(m => ['cash_out', 'expense', 'stock_purchase'].includes(m.type)).reduce((sum, m) => sum + m.amount, 0);
-    const banked = moves.filter(m => m.type === 'bank_deposit').reduce((sum, m) => sum + m.amount, 0);
-
-    const expected = activeDay.openingCash + cashSales + cashPays + manualIn - manualOut - banked;
+    // Calculations via centralized Financial Engine
+    const expected = calculateCashOnHand(
+      loadDBList<Sale>('sales').filter(s => s.date === activeDay.date),
+      loadDBList<Payment>('payments').filter(p => p.date === activeDay.date),
+      loadDBList<CashMovement>('cashMovements').filter(m => m.cashDayId === activeDay.id),
+      [activeDay]
+    );
 
     const days = loadDBList<CashDay>('cashDays');
     const idx = days.findIndex(d => d.id === activeDay.id);
@@ -2369,25 +2560,18 @@ export function CashControlView({ activeDay, onRefreshDB, currentUser }: CashCon
     onRefreshDB();
   };
 
-  // Inline calculation for active day expected cash on hand
+  // Inline calculation for active day expected cash on hand via centralized Financial Engine
   const getExpectedOnHand = () => {
     if (!activeDay) return 0;
     const salesList = loadDBList<Sale>('sales');
     const paysList = loadDBList<Payment>('payments');
 
-    const cashSales = salesList
-      .filter(s => s.date === activeDay.date && s.method === 'cash')
-      .reduce((sum, s) => sum + s.total, 0);
-
-    const cashPays = paysList
-      .filter(p => p.date === activeDay.date && p.method === 'cash')
-      .reduce((sum, p) => sum + p.amount, 0);
-
-    const manualIn = cashMovements.filter(m => m.type === 'cash_in').reduce((sum, m) => sum + m.amount, 0);
-    const manualOut = cashMovements.filter(m => ['cash_out', 'expense', 'stock_purchase'].includes(m.type)).reduce((sum, m) => sum + m.amount, 0);
-    const banked = cashMovements.filter(m => m.type === 'bank_deposit').reduce((sum, m) => sum + m.amount, 0);
-
-    return activeDay.openingCash + cashSales + cashPays + manualIn - manualOut - banked;
+    return calculateCashOnHand(
+      salesList.filter(s => s.date === activeDay.date),
+      paysList.filter(p => p.date === activeDay.date),
+      cashMovements.filter(m => m.cashDayId === activeDay.id),
+      [activeDay]
+    );
   };
 
   return (

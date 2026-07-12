@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Under Phoenix Financial Services, authorize full read/write for all collections
+    // since the app uses internal role-based verification, and we want seamless synchronization.
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

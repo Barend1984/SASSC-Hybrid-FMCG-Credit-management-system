@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Customer, Agreement, Product, CartItem, AffordabilityAssessment, AgreementItem } from '../types';
+import { Customer, Agreement, Product, CartItem, AffordabilityAssessment, AgreementItem, OverrideLog } from '../types';
 import { 
   loadDBList, 
   saveDBList, 
@@ -14,10 +14,10 @@ import {
   generateAccountInvoice, 
   downloadRtfFile 
 } from '../utils/rtfGenerator';
-import { UserCheck, Sparkles, AlertTriangle, FileText, CheckCircle2, ChevronRight, ChevronLeft, ShoppingCart, ShieldAlert, Printer, Fingerprint, ShieldCheck, RefreshCw, Upload, Database, Landmark, Percent, Ban, HelpCircle, Activity, Info, Check, Eye, Download } from 'lucide-react';
+import { UserCheck, Sparkles, AlertTriangle, FileText, CheckCircle2, ChevronRight, ChevronLeft, ShoppingCart, ShieldAlert, Printer, Fingerprint, ShieldCheck, RefreshCw, Upload, Database, Landmark, Percent, Ban, HelpCircle, Activity, Info, Check, Eye, Download, Shield } from 'lucide-react';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import SignaturePad from './SignaturePad';
-import { printLegalAgreement, printAccountInvoice, printSalaryConsent, printAffordabilityDeclaration } from '../utils/printDoc';
+import { printLegalAgreement, printAccountInvoice, printSalaryConsent, printAffordabilityDeclaration, printFreedomOfChoiceMandate, printLossPayeeNominationMandate, printForm20Quotation } from '../utils/printDoc';
 
 interface CreditWizardViewProps {
   customers: Customer[];
@@ -26,6 +26,7 @@ interface CreditWizardViewProps {
   onNavigate: (page: string) => void;
   activeDay: any;
   preselectedCustomerId?: string;
+  currentUser?: any;
 }
 
 export default function CreditWizardView({ 
@@ -34,18 +35,31 @@ export default function CreditWizardView({
   onRefreshDB, 
   onNavigate, 
   activeDay, 
-  preselectedCustomerId 
+  preselectedCustomerId,
+  currentUser
 }: CreditWizardViewProps) {
   const [step, setStep] = useState(1);
   
+  // Administrative Override States
+  const [adminOverrideActive, setAdminOverrideActive] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+
   // State
   const [selectedCustomerId, setSelectedCustomerId] = useState(preselectedCustomerId || '');
+
+  // Reset override states when customer changes
+  useEffect(() => {
+    setAdminOverrideActive(false);
+    setOverrideReason('');
+  }, [selectedCustomerId]);
   const [goodsAmount, setGoodsAmount] = useState<number>(0);
   const [loanAmount, setLoanAmount] = useState<number>(0);
   const [purpose, setPurpose] = useState('Groceries + Payday Loan');
   const [notes, setNotes] = useState('');
   const [agreementDate, setAgreementDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState('');
+  const [insuranceSelection, setInsuranceSelection] = useState<'none' | 'base' | 'topup'>('base');
 
   // Affordability Assessment Fields
   const [income, setIncome] = useState<number>(0);
@@ -610,17 +624,26 @@ Date       Description                           Amount (ZAR)
   }, [selectedCustomerId, customers]);
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId) || null;
-  const isBlocked = selectedCustomerId ? checkCustomerOverdue(selectedCustomerId, agreements) : false;
   const currentExposure = selectedCustomerId ? getCustomerExposure(selectedCustomerId, agreements) : 0;
+  const isCustomerInDefaultOrHasBalance = selectedCustomerId ? (checkCustomerOverdue(selectedCustomerId, agreements) || currentExposure > 0) : false;
+  const isBlocked = isCustomerInDefaultOrHasBalance && !adminOverrideActive;
 
-  // NCA fees calculations
+  // NCA fees and Credit Life Insurance / 15% VAT calculations
   const totalGroceriesAndLoan = goodsAmount + loanAmount;
   const fees = calcNcaFees(totalGroceriesAndLoan);
+  const deferredDebtBeforeInsurance = totalGroceriesAndLoan + fees.initiation + fees.service;
+
+  const insurancePremium = insuranceSelection === 'none' ? 0 : 
+                           insuranceSelection === 'base' ? Math.round((deferredDebtBeforeInsurance * 4.50 / 1000) * 100) / 100 :
+                           Math.round((deferredDebtBeforeInsurance * 5.50 / 1000) * 100) / 100;
+
+  const vatAmount = Math.round((deferredDebtBeforeInsurance + insurancePremium) * 0.15 * 100) / 100;
+  const totalAmountWithVat = deferredDebtBeforeInsurance + insurancePremium + vatAmount;
 
   // Affordability calculations
   const expensesTotal = rent + municipal + food + transport + clothing + telephone + otherLoans + insurance + pocketMoney;
   const disposable = income - expensesTotal;
-  const afterRepayment = disposable - fees.total;
+  const afterRepayment = disposable - totalAmountWithVat;
   const isAffordable = afterRepayment >= 0;
 
   const handleAddToCart = (product: Product) => {
@@ -707,8 +730,12 @@ Date       Description                           Amount (ZAR)
       capital: totalGroceriesAndLoan,
       initiationFee: fees.initiation,
       serviceFee: fees.service,
-      totalAmount: fees.total,
-      balance: fees.total,
+      insuranceType: insuranceSelection,
+      insurancePremium: insurancePremium,
+      vatAmount: vatAmount,
+      totalAmountWithVat: totalAmountWithVat,
+      totalAmount: totalAmountWithVat,
+      balance: totalAmountWithVat,
       paid: 0,
       items: agreementItemsArr,
       status: 'active',
@@ -726,6 +753,30 @@ Date       Description                           Amount (ZAR)
     // Save to Local Storage
     const allAgreements = [...agreements, newAgreement];
     saveDBList('agreements', allAgreements);
+
+    // If an administrative override was active, save an Override Log
+    if (adminOverrideActive) {
+      try {
+        const overrideLog: OverrideLog = {
+          id: generateUid(),
+          customerId: selectedCustomerId,
+          customerName: `${selectedCustomer.firstNames || ''} ${selectedCustomer.surname || ''}`.trim() || selectedCustomer.name,
+          fileNo: selectedCustomer.fileNo,
+          date: new Date().toISOString().split('T')[0],
+          type: 'credit_wizard_override',
+          overriddenBy: currentUser?.id || 'admin',
+          overriddenByName: currentUser?.fullName || 'Administrator',
+          reason: overrideReason,
+          outstandingBalance: currentExposure,
+          created: new Date().toISOString()
+        };
+        const allOverrides = loadDBList<OverrideLog>('override_logs');
+        allOverrides.push(overrideLog);
+        saveDBList('override_logs', allOverrides);
+      } catch (err) {
+        console.error('Error saving administrative override log:', err);
+      }
+    }
 
     // Deduct stock if groceries were selected via cart
     if (cart.length > 0) {
@@ -765,10 +816,10 @@ Date       Description                           Amount (ZAR)
   });
 
   // DTI and Risk metrics
-  const proposedDebt = otherLoans + fees.total;
+  const proposedDebt = otherLoans + totalAmountWithVat;
   const existingDti = income > 0 ? (otherLoans / income) * 100 : 0;
   const proposedDti = income > 0 ? (proposedDebt / income) * 100 : 0;
-  const totalExpenseRatio = income > 0 ? ((expensesTotal + fees.total) / income) * 100 : 0;
+  const totalExpenseRatio = income > 0 ? ((expensesTotal + totalAmountWithVat) / income) * 100 : 0;
 
   let dtiRisk: 'low' | 'moderate' | 'high' | 'critical' = 'low';
   let dtiColor = 'text-emerald-400';
@@ -885,24 +936,97 @@ Date       Description                           Amount (ZAR)
                 </div>
 
                 {/* Block / Exposure Indicator */}
-                <div className="pt-2 border-t border-slate-900 flex flex-col sm:flex-row justify-between gap-2">
-                  <div className="text-xs flex items-center gap-1.5">
-                    <span className="text-slate-500">Active Debt Exposure:</span>
-                    <span className={`font-bold ${currentExposure > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                      R {currentExposure.toFixed(2)}
-                    </span>
-                  </div>
-                  <div>
-                    {isBlocked ? (
-                      <div className="inline-flex items-center gap-1 bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2 py-1 rounded text-[11px] font-semibold">
-                        <ShieldAlert className="h-3 w-3" /> ⛔ CREDIT BLOCKED (OVERDUE DETECTED)
-                      </div>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded text-[11px] font-semibold">
-                        ✓ Credit Available
+                <div className="pt-4 border-t border-slate-900 space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div className="text-xs flex items-center gap-1.5">
+                      <span className="text-slate-500">Active Debt Exposure:</span>
+                      <span className={`font-bold ${currentExposure > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        R {currentExposure.toFixed(2)}
                       </span>
-                    )}
+                    </div>
+                    <div>
+                      {isCustomerInDefaultOrHasBalance ? (
+                        <div className="inline-flex items-center gap-1 bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2.5 py-1 rounded-lg text-[11px] font-bold">
+                          <ShieldAlert className="h-3.5 w-3.5" /> ⛔ CREDIT BLOCKED (UNPAID BALANCE / DEFAULT)
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-lg text-[11px] font-bold">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> ✓ Credit Available
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {isCustomerInDefaultOrHasBalance && (
+                    <div className="bg-rose-950/20 border border-rose-900/30 rounded-xl p-4 space-y-3.5">
+                      <div className="flex gap-2 text-rose-400">
+                        <Ban className="h-5 w-5 shrink-0 mt-0.5" />
+                        <div className="text-xs space-y-1">
+                          <div className="font-extrabold uppercase tracking-wider">NCA Default Protection Rules Active</div>
+                          <p className="text-slate-300 leading-relaxed">
+                            Under Phoenix Financial policy and National Credit Act reckless lending protection, clients with unpaid balances or default states are blocked from processing new credit transactions or loans.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Info on Settlement */}
+                      <div className="bg-slate-900 border border-slate-850 rounded-lg p-3 text-xs text-slate-300 space-y-1.5">
+                        <p className="font-bold text-slate-200">How to unlock without override:</p>
+                        <p>
+                          1. Confirm outstanding amount (<strong>R {currentExposure.toFixed(2)}</strong>) has been fully settled.
+                        </p>
+                        <p>
+                          2. Click below to navigate to the customer profile to record the settlement payment first.
+                        </p>
+                        <p>
+                          3. Once cleared, you must <strong>start the credit wizard from the beginning</strong>.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => onNavigate('customers')}
+                          className="mt-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded text-[11px] font-bold transition flex items-center gap-1"
+                        >
+                          <Database size={12} /> Go to Customer Profile & Repayments
+                        </button>
+                      </div>
+
+                      {/* Admin Override Trigger */}
+                      <div className="pt-2 border-t border-rose-950/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        {adminOverrideActive ? (
+                          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs px-3 py-2 rounded-lg w-full flex items-center justify-between">
+                            <span className="font-semibold flex items-center gap-1">
+                              <ShieldCheck className="h-4 w-4" /> Administrative Override Active
+                            </span>
+                            <span className="text-[10px] font-mono opacity-80 max-w-[200px] truncate" title={overrideReason}>
+                              "{overrideReason}"
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-[11px] text-slate-400">
+                              {currentUser?.role === 'main_admin' ? (
+                                <span className="text-amber-500 font-medium">✓ You are logged in as Administrator. You may override this block.</span>
+                              ) : (
+                                <span className="text-rose-400 font-medium">🔒 Operator role detected. Administrator authentication required to override.</span>
+                              )}
+                            </div>
+                            {currentUser?.role === 'main_admin' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOverrideReason('');
+                                  setShowOverrideModal(true);
+                                }}
+                                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+                              >
+                                <Shield size={13} /> Bypass block
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1106,7 +1230,7 @@ Date       Description                           Amount (ZAR)
               {/* Composition Preview */}
               {totalGroceriesAndLoan > 0 && (
                 <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2 text-xs">
-                  <div className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-2">NCA Fee Calculations</div>
+                  <div className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-2">NCA Fee & Tax Calculations</div>
                   <div className="flex justify-between text-slate-400">
                     <span>Combined Capital</span>
                     <span>R {totalGroceriesAndLoan.toFixed(2)}</span>
@@ -1119,9 +1243,17 @@ Date       Description                           Amount (ZAR)
                     <span>Service Fee (Monthly)</span>
                     <span>R {fees.service.toFixed(2)}</span>
                   </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Credit Life Insurance ({insuranceSelection === 'none' ? 'None' : insuranceSelection === 'base' ? 'Base Policy' : 'Top-Up Policy'})</span>
+                    <span>R {insurancePremium.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>VAT (15%)</span>
+                    <span>R {vatAmount.toFixed(2)}</span>
+                  </div>
                   <div className="flex justify-between text-slate-200 font-bold border-t border-slate-900 pt-2 text-sm">
-                    <span className="text-slate-300">Total Outstanding debt</span>
-                    <span className="text-amber-500">R {fees.total.toFixed(2)}</span>
+                    <span className="text-slate-300">Total Contract Cost (VAT-Incl)</span>
+                    <span className="text-amber-500">R {totalAmountWithVat.toFixed(2)}</span>
                   </div>
                 </div>
               )}
@@ -1505,8 +1637,8 @@ Date       Description                           Amount (ZAR)
                     </span>
                   </div>
                   <div className="flex justify-between text-slate-400 border-t border-slate-900 pt-2">
-                    <span>Proposed Credit Obligation</span>
-                    <span className="text-amber-500 font-bold">R {fees.total.toFixed(2)}</span>
+                    <span>Proposed Credit Obligation (VAT-Incl)</span>
+                    <span className="text-amber-500 font-bold">R {totalAmountWithVat.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-slate-300">
                     <span>Surplus After Installment</span>
@@ -1613,6 +1745,115 @@ Date       Description                           Amount (ZAR)
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
+                <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                  <Shield size={14} className="text-amber-500" /> Credit Life Insurance Selection
+                </h4>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  The NCA permits one mandatory Credit Life Insurance policy. Choose the internal statutory cover or select external cover with appropriate mandates.
+                </p>
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2 p-2.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-900 cursor-pointer transition">
+                    <input
+                      type="radio"
+                      name="insuranceSelection"
+                      checked={insuranceSelection === 'base'}
+                      onChange={() => setInsuranceSelection('base')}
+                      className="mt-0.5 text-amber-500 focus:ring-amber-500 focus:ring-offset-slate-950"
+                    />
+                    <div className="space-y-0.5 text-xs">
+                      <div className="font-bold text-slate-200 flex justify-between">
+                        <span>Base Credit Life Cover</span>
+                        <span className="text-amber-400">R4.50 / R1k</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Covers death, disability, and 12-month retrenchment. Declining balance basis. Zero waiting periods.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 p-2.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-900 cursor-pointer transition">
+                    <input
+                      type="radio"
+                      name="insuranceSelection"
+                      checked={insuranceSelection === 'topup'}
+                      onChange={() => setInsuranceSelection('topup')}
+                      className="mt-0.5 text-amber-500 focus:ring-amber-500 focus:ring-offset-slate-950"
+                    />
+                    <div className="space-y-0.5 text-xs">
+                      <div className="font-bold text-slate-200 flex justify-between">
+                        <span>Top-Up Structural Cover</span>
+                        <span className="text-amber-400">R5.50 / R1k</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Covers Base Policy benefits plus optional critical illness and physical trauma payouts.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 p-2.5 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-900 cursor-pointer transition">
+                    <input
+                      type="radio"
+                      name="insuranceSelection"
+                      checked={insuranceSelection === 'none'}
+                      onChange={() => setInsuranceSelection('none')}
+                      className="mt-0.5 text-amber-500 focus:ring-amber-500 focus:ring-offset-slate-950"
+                    />
+                    <div className="space-y-0.5 text-xs">
+                      <div className="font-bold text-slate-200 flex justify-between">
+                        <span>External Policy Waiver</span>
+                        <span className="text-slate-400">R0.00</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Client opts for external insurance. Requires signing of Freedom of Choice & Loss Payee Mandates.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Form 20 - Pre-Agreement Statement & Quotation */}
+              <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText size={14} className="text-amber-500" /> Form 20 statutory Quote
+                  </span>
+                  <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 font-bold uppercase tracking-wider">
+                    NCR Pre-Agreement
+                  </span>
+                </div>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Principal Debt (Capital):</span>
+                    <span className="font-mono text-slate-300">R {totalGroceriesAndLoan.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>NCA Initiation Fee (10%):</span>
+                    <span className="font-mono text-slate-300">R {fees.initiation.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Monthly Service Fee:</span>
+                    <span className="font-mono text-slate-300">R {fees.service.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Initial Insurance Premium:</span>
+                    <span className="font-mono text-slate-300">R {insurancePremium.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Interest Rate:</span>
+                    <span className="font-mono text-slate-300">0.00%</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>15% VAT:</span>
+                    <span className="font-mono text-slate-300">R {vatAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold border-t border-slate-800 pt-1.5 text-slate-200">
+                    <span>Total Cost of Credit:</span>
+                    <span className="font-mono text-amber-500">R {totalAmountWithVat.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
               <div className="form-group">
                 <label className="text-xs text-slate-400">Agreement Date</label>
                 <input
@@ -1825,6 +2066,54 @@ Date       Description                           Amount (ZAR)
                   </button>
                 </div>
               </div>
+
+              {/* Document 5: Freedom of Choice Mandate */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-slate-300 block">5. Freedom Of Choice Mandate (NCA Sec 106)</span>
+                  <p className="text-[10px] text-slate-500">Statutory NCA Sec 106(4) choice declaration signed by consumer.</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => printFreedomOfChoiceMandate(createdAgreement, selectedCustomer!)}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer text-xs"
+                  >
+                    <Printer size={12} /> Print
+                  </button>
+                </div>
+              </div>
+
+              {/* Document 6: Loss Payee Nomination Mandate */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-slate-300 block">6. Loss Payee Nomination Mandate</span>
+                  <p className="text-[10px] text-slate-500">External policy beneficiary instruction designating Phoenix as loss payee.</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => printLossPayeeNominationMandate(createdAgreement, selectedCustomer!)}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer text-xs"
+                  >
+                    <Printer size={12} /> Print
+                  </button>
+                </div>
+              </div>
+
+              {/* Document 7: Form 20 Statutory Quotation */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-slate-300 block">7. Pre-Agreement Quote (Form 20)</span>
+                  <p className="text-[10px] text-slate-500">NCR-compliant credit quotation statement outlining total cost of credit.</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => printForm20Quotation(createdAgreement, selectedCustomer!)}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer text-xs"
+                  >
+                    <Printer size={12} /> Print
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1898,6 +2187,82 @@ Date       Description                           Amount (ZAR)
           }
         }}
       />
+
+      {/* Administrative Override Modal */}
+      {showOverrideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col">
+            <div className="px-6 py-4 bg-slate-950/60 border-b border-slate-850 flex items-center justify-between">
+              <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                <Shield className="text-amber-500 h-5 w-5" />
+                <span>Administrative Override Authorization</span>
+              </h3>
+              <button 
+                onClick={() => {
+                  setShowOverrideModal(false);
+                  setOverrideReason('');
+                }}
+                className="text-slate-400 hover:text-white text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-xs text-amber-400 space-y-2">
+                <p className="font-bold">⚠️ AUDITED REGULATORY TRANSACTION OVERRIDE</p>
+                <p>
+                  You are enabling an administrative override for customer <strong>{selectedCustomer ? `${selectedCustomer.firstNames || ''} ${selectedCustomer.surname || ''}`.trim() || selectedCustomer.name : 'Unknown'}</strong>.
+                </p>
+                <p>
+                  Current Active Exposure: <strong>R {currentExposure.toFixed(2)}</strong>.
+                </p>
+                <p>
+                  This action violates standard system rules and will be permanently logged in the secure administrative database with your user account details (<strong>{currentUser?.fullName || 'Operator'}</strong>).
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  Compulsory Short Note / Justification Report *
+                </label>
+                <textarea
+                  rows={3}
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="Enter detailed reason / administrative error explanation here..."
+                  className="w-full bg-slate-950 border border-slate-850 rounded-lg text-slate-200 p-3 text-sm focus:outline-none focus:border-amber-500 placeholder-slate-600"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-850 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverrideModal(false);
+                  setOverrideReason('');
+                }}
+                className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold rounded-lg text-xs"
+              >
+                Abort
+              </button>
+              <button
+                type="button"
+                disabled={!overrideReason.trim()}
+                onClick={() => {
+                  if (!overrideReason.trim()) return;
+                  setAdminOverrideActive(true);
+                  setShowOverrideModal(false);
+                }}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-800 text-slate-950 disabled:text-slate-500 font-extrabold rounded-lg text-xs flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+              >
+                <Check size={14} /> Authorize & Apply Override
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

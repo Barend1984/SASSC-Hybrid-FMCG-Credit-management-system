@@ -3,7 +3,7 @@ import {
   Customer, Agreement, Sale, Payment, CollectionNote, CashDay, User 
 } from './types';
 import { 
-  seedSampleData, loadDBList, saveDBList, generateUid 
+  seedSampleData, loadDBList, saveDBList, generateUid, syncWithFirestore 
 } from './utils/database';
 
 // Views
@@ -12,6 +12,7 @@ import PosCashView from './components/PosCashView';
 import CreditWizardView from './components/CreditWizardView';
 import CustomersView from './components/CustomersView';
 import AgreementsView from './components/AgreementsView';
+import AccountingPeriodView from './components/AccountingPeriodView';
 import { 
   PaymentsView, OverdueView, CollectionsView, StockView, 
   ReportsView, CashControlView, CalculatorView, SettingsView 
@@ -21,7 +22,8 @@ import {
 import { 
   LayoutDashboard, ShoppingCart, ShieldCheck, Users, FileText, 
   DollarSign, AlertCircle, PhoneCall, PackageOpen, ClipboardList, 
-  SlidersHorizontal, Landmark, ShieldCheck as ShieldIcon, UserX, Menu, X, LogIn 
+  SlidersHorizontal, Landmark, ShieldCheck as ShieldIcon, UserX, Menu, X, LogIn,
+  MessageCircle, BookOpen
 } from 'lucide-react';
 
 export default function App() {
@@ -103,6 +105,13 @@ export default function App() {
 
   useEffect(() => {
     syncDatabase();
+    syncWithFirestore()
+      .then(() => {
+        syncDatabase();
+      })
+      .catch(err => {
+        console.error("Firestore sync error:", err);
+      });
   }, []);
 
   const handleRefresh = () => {
@@ -163,6 +172,7 @@ export default function App() {
     { id: 'stock', label: 'Stock Catalog', icon: PackageOpen },
     { id: 'reports', label: 'Financial Reports', icon: ClipboardList },
     { id: 'cash_control', label: 'Cash Control Day', icon: Landmark },
+    { id: 'accounting', label: 'Accounting & Audits', icon: BookOpen },
     { id: 'calculator', label: 'NCA Fee Calculator', icon: SlidersHorizontal },
     { id: 'settings', label: 'System Settings', icon: SlidersHorizontal },
   ];
@@ -248,6 +258,20 @@ export default function App() {
             </nav>
           </div>
 
+          {/* WhatsApp Channel Link */}
+          <div className="px-4 py-3 mx-3 mb-2 bg-emerald-950/20 border border-emerald-900/30 rounded-xl space-y-1.5">
+            <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider block">Official Broadcasts</span>
+            <a 
+              href="https://whatsapp.com/channel/0029VbBuS4XDzgTAGE2EaO0Z" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition shadow-sm cursor-pointer"
+            >
+              <MessageCircle className="h-4 w-4 shrink-0 text-white" />
+              <span>Join WhatsApp Channel</span>
+            </a>
+          </div>
+
           {/* Connected User details footer */}
           <div className="p-4 border-t border-slate-850 bg-slate-950/40 space-y-2">
             <div className="flex items-center gap-2.5">
@@ -286,6 +310,7 @@ export default function App() {
                 currentUser={currentUser}
                 activeDay={activeDay}
                 onRefreshStats={handleRefresh}
+                agreements={agreements}
                 onCompleteSale={(sale) => {
                   handleRefresh();
                 }}
@@ -299,6 +324,7 @@ export default function App() {
                 activeDay={activeDay}
                 onRefreshDB={handleRefresh}
                 onNavigate={(t) => setActiveTab(t)}
+                currentUser={currentUser}
               />
             )}
 
@@ -328,6 +354,8 @@ export default function App() {
               <PaymentsView 
                 payments={payments}
                 customers={customers}
+                currentUser={currentUser}
+                onRefreshDB={handleRefresh}
               />
             )}
 
@@ -362,6 +390,10 @@ export default function App() {
                 onRefreshDB={handleRefresh}
                 currentUser={currentUser}
               />
+            )}
+
+            {activeTab === 'accounting' && (
+              <AccountingPeriodView />
             )}
 
             {activeTab === 'calculator' && (

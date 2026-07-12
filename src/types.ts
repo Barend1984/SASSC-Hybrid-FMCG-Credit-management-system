@@ -27,8 +27,21 @@ export interface Customer {
   type: 'cash' | 'credit';
   bank: BankDetails;
   notes: string;
+  photoUrl?: string;
+  hasWhatsApp?: 'yes' | 'no';
+  nokName?: string;
+  nokPhone?: string;
   created: string;
   updated: string;
+}
+
+export interface WhatsAppLog {
+  id: string;
+  customerId: string;
+  date: string; // e.g. "2026-06-30 14:22"
+  message: string;
+  senderName: string;
+  direction: 'sent' | 'received';
 }
 
 export interface CartItem {
@@ -88,11 +101,16 @@ export interface Agreement {
   capital: number;
   initiationFee: number;
   serviceFee: number;
+  insuranceType?: 'none' | 'base' | 'topup';
+  insurancePremium?: number;
+  vatAmount?: number;
+  totalAmountWithVat?: number;
   totalAmount: number;
   balance: number;
   paid: number;
   items: AgreementItem[];
   status: 'active' | 'overdue' | 'paid';
+  agreementType?: 'STANDARD' | 'DEFAULT' | 'RESTRUCTURED';
   saleId?: string;
   affordability?: AffordabilityAssessment;
   notes: string;
@@ -258,4 +276,88 @@ export interface WriteOff {
   recordedBy: string;
   recordedByName: string;
 }
+
+export interface OverrideLog {
+  id: string;
+  customerId: string;
+  customerName: string;
+  fileNo: string;
+  date: string;
+  type: 'credit_wizard_override' | 'pos_override';
+  overriddenBy: string;
+  overriddenByName: string;
+  reason: string;
+  outstandingBalance: number;
+  created: string;
+}
+
+export interface AccountingPeriod {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: 'OPEN' | 'CLOSED' | 'AUDIT_EXCEPTION';
+  closingDate?: string;
+  closedBy?: string;
+  capitalOpeningBalance: number;
+  capitalClosingBalance: number;
+  cashOpening: number;
+  cashClosing: number;
+  stockOpening: number;
+  stockClosing: number;
+  outstandingPrincipalOpening: number;
+  outstandingPrincipalClosing: number;
+  interestEarned: number;
+  feesEarned: number;
+  retailProfit: number;
+  otherIncome: number;
+  operationalExpenses: number;
+  grossProfit: number;
+  netProfit: number;
+  auditNotes?: string;
+  createdDate: string;
+  modifiedDate: string;
+  // Audit control layer additions
+  systemTotalValueExpected?: number;
+  systemTotalValueActual?: number;
+  systemTotalValueVariance?: number;
+  auditStatus?: 'PASSED' | 'FAILED' | 'EXCEPTION';
+  closureReason?: 'Cash shortage' | 'Stock loss' | 'System correction' | 'Unknown (fraud risk flag)' | 'None';
+  auditExceptionDetails?: string;
+}
+
+export interface AccountingAuditLog {
+  id: string;
+  periodId: string;
+  periodName: string;
+  user: string;
+  date: string;
+  time: string;
+  action: 'OPEN' | 'CLOSE' | 'REOPEN';
+  reason: string;
+  timestamp: string;
+}
+
+export interface BarcodeMapping {
+  id: string;
+  productId: string;
+  barcode: string;
+  sku: string;
+  description?: string;
+}
+
+export interface StockAdjustmentEntry {
+  id: string;
+  productId: string;
+  sku: string;
+  date: string;
+  type: 'damage' | 'theft' | 'audit_correction' | 'initial_load' | 'manual_add';
+  quantityAdjusted: number; // positive or negative
+  reason: string;
+  user: string;
+  costValueAdjusted: number; // buyPrice * quantityAdjusted
+  timestamp: string;
+}
+
+
 

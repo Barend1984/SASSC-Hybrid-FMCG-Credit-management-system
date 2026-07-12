@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Customer, Agreement, Payment, CollectionNote } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Customer, Agreement, Payment, CollectionNote, WhatsAppLog } from '../types';
 import { 
   loadDBList, 
   saveDBList, 
@@ -14,10 +14,12 @@ import {
   downloadRtfFile 
 } from '../utils/rtfGenerator';
 import DocumentPreviewModal from './DocumentPreviewModal';
-import { printLegalAgreement, printAccountInvoice, printSalaryConsent, printAffordabilityDeclaration } from '../utils/printDoc';
+import { printLegalAgreement, printAccountInvoice, printSalaryConsent, printAffordabilityDeclaration, printCustomerIdentityProfile } from '../utils/printDoc';
+import { calculateCustomerPayments } from '../utils/financialEngine';
 import { 
   Search, User, Phone, Eye, Edit, Trash2, Calendar, 
-  CreditCard, ShieldAlert, CheckCircle2, ChevronRight, FileSpreadsheet, PlusCircle, Printer, Download
+  CreditCard, ShieldAlert, CheckCircle2, ChevronRight, FileSpreadsheet, PlusCircle, Printer, Download,
+  Camera, Upload, Image
 } from 'lucide-react';
 
 interface CustomersViewProps {
@@ -28,6 +30,8 @@ interface CustomersViewProps {
   currentUser: any;
   onRefreshDB: () => void;
   onAddCollectionNote: (custId: string, agrId: string) => void;
+  selectedCustomerId?: string | null;
+  onSelectCustomer?: (id: string | null) => void;
 }
 
 export default function CustomersView({
@@ -37,13 +41,19 @@ export default function CustomersView({
   collectionNotes,
   currentUser,
   onRefreshDB,
-  onAddCollectionNote
+  onAddCollectionNote,
+  selectedCustomerId: propSelectedCustomerId,
+  onSelectCustomer: propOnSelectCustomer
 }: CustomersViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [localSelectedCustomerId, setLocalSelectedCustomerId] = useState<string | null>(null);
+  const selectedCustomerId = propSelectedCustomerId !== undefined ? propSelectedCustomerId : localSelectedCustomerId;
+  const setSelectedCustomerId = propOnSelectCustomer || setLocalSelectedCustomerId;
+
   const [selectedAgreementId, setSelectedAgreementId] = useState<string | null>(null);
   const [activeProfileTab, setActiveProfileTab] = useState<'profile' | 'agreements' | 'payments' | 'collections'>('profile');
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'whatsapp' | 'collections'>('profile');
 
   // Document preview modal state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -85,10 +95,65 @@ export default function CustomersView({
   const [bankBranch, setBankBranch] = useState('');
   const [bankHolder, setBankHolder] = useState('');
   const [notes, setNotes] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [hasWhatsApp, setHasWhatsApp] = useState<'yes' | 'no'>('yes');
+  const [nokName, setNokName] = useState('');
+  const [nokPhone, setNokPhone] = useState('');
+  const [whatsappLogs, setWhatsappLogs] = useState<WhatsAppLog[]>([]);
+  const [whatsappInput, setWhatsappInput] = useState('');
+
+  useEffect(() => {
+    if (selectedCustomerId) {
+      const logs = loadDBList<WhatsAppLog>('whatsapp_logs');
+      setWhatsappLogs(logs.filter(l => l.customerId === selectedCustomerId));
+    } else {
+      setWhatsappLogs([]);
+    }
+  }, [selectedCustomerId]);
 
   // Statement Overlay state
   const [isStatementOpen, setIsStatementOpen] = useState(false);
   const [statementCustId, setStatementCustId] = useState('');
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 250;
+        const MAX_HEIGHT = 250;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          setPhotoUrl(compressedBase64);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const formatCurrency = (amount: number): string => {
     return 'R ' + (amount || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -128,6 +193,10 @@ export default function CustomersView({
     setBankBranch('');
     setBankHolder('');
     setNotes('');
+    setPhotoUrl('');
+    setHasWhatsApp('yes');
+    setNokName('');
+    setNokPhone('');
     setIsEditModalOpen(true);
   };
 
@@ -155,6 +224,10 @@ export default function CustomersView({
     setBankBranch(c.bank?.branchCode || '');
     setBankHolder(c.bank?.holder || '');
     setNotes(c.notes || '');
+    setPhotoUrl(c.photoUrl || '');
+    setHasWhatsApp(c.hasWhatsApp || 'yes');
+    setNokName(c.nokName || '');
+    setNokPhone(c.nokPhone || '');
     setIsEditModalOpen(true);
   };
 
@@ -196,6 +269,10 @@ export default function CustomersView({
         holder: bankHolder.trim()
       },
       notes: notes.trim(),
+      photoUrl: photoUrl,
+      hasWhatsApp: hasWhatsApp,
+      nokName: nokName.trim(),
+      nokPhone: nokPhone.trim(),
       created: existing?.created || new Date().toISOString().split('T')[0],
       updated: new Date().toISOString()
     };
@@ -234,6 +311,86 @@ export default function CustomersView({
   const triggerStatement = (custId: string) => {
     setStatementCustId(custId);
     setIsStatementOpen(true);
+  };
+
+  const handleSendWhatsAppStatement = (customer: Customer, totalExposure: number, activeAgreements: Agreement[]) => {
+    const targetNo = customer.hasWhatsApp === 'no' ? customer.nokPhone : customer.phone;
+    if (!targetNo) {
+      alert('Error: No active phone or Next of Kin phone number was found.');
+      return;
+    }
+
+    const formattedDate = new Date().toISOString().split('T')[0];
+    const exposureFormatted = formatCurrency(totalExposure);
+    
+    let agreementsText = '';
+    if (activeAgreements.length === 0) {
+      agreementsText = 'No active agreements found.\n';
+    } else {
+      activeAgreements.forEach(a => {
+        agreementsText += `• Agreement #${a.agrNumber} (Due: ${a.dueDate}): Outstanding ${formatCurrency(a.balance)}\n`;
+      });
+    }
+
+    const bankText = customer.bank?.name 
+      ? `*Banking Details for EFT Repayments:*\nBank: ${customer.bank.name}\nAccount Holder: ${customer.bank.holder || 'SASSC'}\nAccount No: ${customer.bank.accountNumber}\nBranch Code: ${customer.bank.branchCode || 'Default'}\nReference: #${customer.fileNo}`
+      : `*Banking Details for EFT Repayments:*\nPlease use SASSC main EFT account with Reference: #${customer.fileNo}`;
+
+    const textMessage = `*SASSC CREDIT MANAGEMENT SYSTEM*
+----------------------------------------
+*Statement Date:* ${formattedDate}
+*Customer Profile:* ${customer.name}
+*File Number:* #${customer.fileNo}
+${customer.idNumber ? `*ID Number:* ${customer.idNumber}\n` : ''}
+*Total Outstanding Exposure:* ${exposureFormatted}
+
+*Active Agreements Statement:*
+${agreementsText}
+${bankText}
+
+Please send your Proof of Payment as soon as payment is completed.
+Thank you,
+SASSC Credit Control Operations.`;
+
+    let sanitizedPhone = targetNo.replace(/\s+/g, '').replace(/[-()]/g, '');
+    if (sanitizedPhone.startsWith('0')) {
+      sanitizedPhone = '27' + sanitizedPhone.slice(1);
+    } else if (sanitizedPhone.startsWith('+')) {
+      sanitizedPhone = sanitizedPhone.slice(1);
+    }
+
+    const currentLogs = loadDBList<WhatsAppLog>('whatsapp_logs');
+    const newLog: WhatsAppLog = {
+      id: generateUid(),
+      customerId: customer.id,
+      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      message: textMessage,
+      senderName: currentUser?.fullName || 'Claudine (Admin)',
+      direction: 'sent'
+    };
+    const updatedLogs = [...currentLogs, newLog];
+    saveDBList('whatsapp_logs', updatedLogs);
+    setWhatsappLogs(updatedLogs.filter(l => l.customerId === customer.id));
+
+    const url = `https://api.whatsapp.com/send?phone=${sanitizedPhone}&text=${encodeURIComponent(textMessage)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleSaveManualWhatsAppLog = (customer: Customer, msgText: string, direction: 'sent' | 'received') => {
+    if (!msgText.trim()) return;
+    const currentLogs = loadDBList<WhatsAppLog>('whatsapp_logs');
+    const newLog: WhatsAppLog = {
+      id: generateUid(),
+      customerId: customer.id,
+      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      message: msgText.trim(),
+      senderName: direction === 'sent' ? (currentUser?.fullName || 'Agent') : 'Client',
+      direction
+    };
+    const updated = [...currentLogs, newLog];
+    saveDBList('whatsapp_logs', updated);
+    setWhatsappLogs(updated.filter(l => l.customerId === customer.id));
+    setWhatsappInput('');
   };
 
   // Filters
@@ -336,10 +493,32 @@ export default function CustomersView({
                           }`}
                         >
                           <td className="p-3.5">
-                            <div className="font-semibold text-slate-200">{c.name}</div>
-                            <div className="text-[10px] text-slate-500">File No: {c.fileNo}</div>
+                            <div className="flex items-center gap-2.5">
+                              {c.photoUrl ? (
+                                <img src={c.photoUrl} alt={c.name} className="w-8 h-8 rounded-full object-cover border border-slate-750" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-slate-950 border border-slate-850 flex items-center justify-center text-slate-500">
+                                  <User size={14} />
+                                </div>
+                              )}
+                              <div>
+                                <div className="font-semibold text-slate-200">{c.name}</div>
+                                <div className="text-[10px] text-slate-500">File No: {c.fileNo}</div>
+                              </div>
+                            </div>
                           </td>
-                          <td className="p-3.5 text-slate-300">{c.phone}</td>
+                          <td className="p-3.5 text-slate-300">
+                            <div>{c.phone}</div>
+                            {c.hasWhatsApp === 'no' ? (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1 rounded mt-0.5" title={`No WhatsApp. Alternate NOK: ${c.nokName} (${c.nokPhone})`}>
+                                ⚠️ No WA
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-emerald-400 bg-emerald-500/5 px-1 rounded mt-0.5">
+                                💬 WhatsApp
+                              </span>
+                            )}
+                          </td>
                           <td className="p-3.5 text-slate-400">{c.idNumber || '—'}</td>
                           <td className="p-3.5">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
@@ -390,9 +569,18 @@ export default function CustomersView({
       return (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-6 xl:col-span-5">
           <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-            <div>
-              <h3 className="font-bold text-slate-100 text-base">{c.name}</h3>
-              <p className="text-xs text-slate-400">File No: #{c.fileNo}</p>
+            <div className="flex items-center gap-3">
+              {c.photoUrl ? (
+                <img src={c.photoUrl} alt={c.name} className="w-12 h-12 rounded-full object-cover border border-slate-750" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-slate-950 border border-slate-850 flex items-center justify-center text-slate-500">
+                  <User size={20} />
+                </div>
+              )}
+              <div>
+                <h3 className="font-bold text-slate-100 text-base">{c.name}</h3>
+                <p className="text-xs text-slate-400">File No: #{c.fileNo}</p>
+              </div>
             </div>
             <button className="text-slate-400 hover:text-white text-lg font-bold" onClick={() => setSelectedCustomerId(null)}>×</button>
           </div>
@@ -419,142 +607,332 @@ export default function CustomersView({
               )}
             </div>
 
-            <div className="space-y-3">
-              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Account Details</h4>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div><span className="text-slate-500 block">ID Number</span><span className="text-slate-300 font-medium">{c.idNumber || '—'}</span></div>
-                <div><span className="text-slate-500 block">Phone</span><span className="text-slate-300 font-medium">{c.phone}</span></div>
-                <div><span className="text-slate-500 block">Email</span><span className="text-slate-300 font-medium truncate">{c.email || '—'}</span></div>
-                <div><span className="text-slate-500 block">Salary / SASSA Day</span><span className="text-slate-300 font-medium">{c.salaryDay || '—'}</span></div>
-                <div className="col-span-2"><span className="text-slate-500 block">Address</span><span className="text-slate-300 font-medium">{c.address || '—'}</span></div>
-              </div>
+            {/* SUB-TAB NAV SELECTOR */}
+            <div className="flex border-b border-slate-850 gap-1">
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('profile')}
+                className={`flex-1 py-2 text-[10px] font-bold border-b-2 transition cursor-pointer ${
+                  activeSubTab === 'profile'
+                    ? 'border-amber-500 text-amber-500 bg-slate-950/20'
+                    : 'border-transparent text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                👤 Profile
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('whatsapp')}
+                className={`flex-1 py-2 text-[10px] font-bold border-b-2 transition flex items-center justify-center gap-1 cursor-pointer ${
+                  activeSubTab === 'whatsapp'
+                    ? 'border-amber-500 text-amber-500 bg-slate-950/20'
+                    : 'border-transparent text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                💬 WhatsApp {whatsappLogs.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-500 text-[8px] rounded-full font-bold">
+                    {whatsappLogs.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('collections')}
+                className={`flex-1 py-2 text-[10px] font-bold border-b-2 transition cursor-pointer ${
+                  activeSubTab === 'collections'
+                    ? 'border-amber-500 text-amber-500 bg-slate-950/20'
+                    : 'border-transparent text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                📋 Notes
+              </button>
             </div>
 
-            <div className="space-y-3">
-              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Financial & Bank routing</h4>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div><span className="text-slate-500 block">Bank Name</span><span className="text-slate-300 font-medium">{c.bank?.name || '—'}</span></div>
-                <div><span className="text-slate-500 block">Account Number</span><span className="text-slate-300 font-medium">{c.bank?.accountNumber || '—'}</span></div>
-                <div><span className="text-slate-500 block">Branch Code</span><span className="text-slate-300 font-medium">{c.bank?.branchCode || '—'}</span></div>
-                <div><span className="text-slate-500 block">Account Holder</span><span className="text-slate-300 font-medium">{c.bank?.holder || '—'}</span></div>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between">
-                <span>Active Agreements</span>
-                <span className="text-[10px] text-slate-500">{activeCustAgreements.length} total</span>
-              </h4>
-              
-              {activeCustAgreements.length === 0 ? (
-                <div className="text-center p-4 bg-slate-950/40 rounded-lg text-xs text-slate-500 border border-slate-900">No active credit agreements.</div>
-              ) : (
-                <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
-                  {activeCustAgreements.map(a => (
-                    <div key={a.id} className="bg-slate-950 border border-slate-850 p-2.5 rounded-lg flex flex-col gap-2">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-bold text-slate-200">{a.agrNumber}</span>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                          a.status === 'overdue' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'
-                        }`}>{a.status}</span>
-                      </div>
-                      <div className="flex justify-between text-[11px] text-slate-400">
-                        <span>Balance: {formatCurrency(a.balance)}</span>
-                        <span>Due: {formatDate(a.dueDate)}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 justify-end border-t border-slate-900/60 pt-2 mt-1">
-                        <button 
-                          onClick={() => setSelectedAgreementId(a.id)} 
-                          className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                        >
-                          <Eye size={11} className="text-amber-500" /> View
-                        </button>
-                        <button 
-                          onClick={() => printLegalAgreement(a, c)} 
-                          className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                        >
-                          <Printer size={11} className="text-amber-500" /> Print Agr
-                        </button>
-                        <button 
-                          onClick={() => printAccountInvoice(a, c)} 
-                          className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                        >
-                          <Printer size={11} className="text-amber-500" /> Print Inv
-                        </button>
-                        <button 
-                          onClick={() => printSalaryConsent(a, c)} 
-                          className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                        >
-                          <Printer size={11} className="text-amber-500" /> Print Consent
-                        </button>
-                        <button 
-                          onClick={() => printAffordabilityDeclaration(a, c)} 
-                          className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
-                        >
-                          <Printer size={11} className="text-amber-500" /> Print Afford
-                        </button>
-                        <button 
-                          onClick={() => handlePreviewDoc(a, c, 'invoice')} 
-                          className="px-1.5 py-1 text-[9px] text-amber-500 hover:text-amber-400 transition font-semibold"
-                          title="View Invoice Preview"
-                        >
-                          View Inv
-                        </button>
-                        <button 
-                          onClick={() => handleDownloadRtf(a, c, 'invoice')} 
-                          className="px-1.5 py-1 text-[9px] text-slate-500 hover:text-slate-300 transition"
-                          title="Backup Download Invoice (.rtf)"
-                        >
-                          Inv.RTF
-                        </button>
-                        <button 
-                          onClick={() => handlePreviewDoc(a, c, 'aod')} 
-                          className="px-1.5 py-1 text-[9px] text-amber-500 hover:text-amber-400 transition font-semibold"
-                          title="View AoD Preview"
-                        >
-                          View AoD
-                        </button>
-                        <button 
-                          onClick={() => handleDownloadRtf(a, c, 'aod')} 
-                          className="px-1.5 py-1 text-[9px] text-slate-500 hover:text-slate-300 transition"
-                          title="Backup Download AoD (.rtf)"
-                        >
-                          AoD.RTF
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+            {activeSubTab === 'profile' && (
+              <div className="space-y-6">
+                {/* Print Identity Profile / Collection Dossier */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => printCustomerIdentityProfile(c, agreements)}
+                    className="w-full px-3 py-2 bg-slate-950 hover:bg-slate-900 text-amber-500 border border-slate-800 rounded-xl font-bold flex items-center justify-center gap-1.5 transition cursor-pointer text-xs"
+                  >
+                    <Printer size={13} /> Print Identity & Collection Dossier
+                  </button>
                 </div>
-              )}
-            </div>
 
-            <div className="space-y-3 pt-2">
-              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between">
-                <span>Recent Collection Logs</span>
-                <button onClick={() => onAddCollectionNote(c.id, '')} className="text-amber-500 hover:underline text-[10px]">+ Log Note</button>
-              </h4>
-              
-              {activeCustNotes.length === 0 ? (
-                <div className="text-center p-4 bg-slate-950/40 rounded-lg text-xs text-slate-500 border border-slate-900">No collection records captured.</div>
-              ) : (
-                <div className="space-y-2 max-h-[160px] overflow-y-auto">
-                  {activeCustNotes.slice().reverse().map(note => (
-                    <div key={note.id} className="p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-xs space-y-1">
-                      <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>{formatDate(note.date)} — {note.type}</span>
-                        <span>by {note.createdBy}</span>
-                      </div>
-                      <p className="text-slate-300 leading-tight">{note.note}</p>
-                      {note.promiseAmount > 0 && (
-                        <div className="text-[10px] text-amber-500 font-medium">
-                          Promise: {formatCurrency(note.promiseAmount)} by {formatDate(note.promiseDate)}
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Account Details</h4>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div><span className="text-slate-500 block">ID Number</span><span className="text-slate-300 font-medium">{c.idNumber || '—'}</span></div>
+                    <div><span className="text-slate-500 block">Phone</span><span className="text-slate-300 font-medium">{c.phone}</span></div>
+                    <div><span className="text-slate-500 block">Email</span><span className="text-slate-300 font-medium truncate">{c.email || '—'}</span></div>
+                    <div><span className="text-slate-500 block">Salary / SASSA Day</span><span className="text-slate-300 font-medium">{c.salaryDay || '—'}</span></div>
+                    <div className="col-span-2"><span className="text-slate-500 block">Address</span><span className="text-slate-300 font-medium">{c.address || '—'}</span></div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Financial & Bank routing</h4>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div><span className="text-slate-500 block">Bank Name</span><span className="text-slate-300 font-medium">{c.bank?.name || '—'}</span></div>
+                    <div><span className="text-slate-500 block">Account Number</span><span className="text-slate-300 font-medium">{c.bank?.accountNumber || '—'}</span></div>
+                    <div><span className="text-slate-500 block">Branch Code</span><span className="text-slate-300 font-medium">{c.bank?.branchCode || '—'}</span></div>
+                    <div><span className="text-slate-500 block">Account Holder</span><span className="text-slate-300 font-medium">{c.bank?.holder || '—'}</span></div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between">
+                    <span>Active Agreements</span>
+                    <span className="text-[10px] text-slate-500">{activeCustAgreements.length} total</span>
+                  </h4>
+                  
+                  {activeCustAgreements.length === 0 ? (
+                    <div className="text-center p-4 bg-slate-950/40 rounded-lg text-xs text-slate-500 border border-slate-900">No active credit agreements.</div>
+                  ) : (
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                      {activeCustAgreements.map(a => (
+                        <div key={a.id} className="bg-slate-950 border border-slate-850 p-2.5 rounded-lg flex flex-col gap-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-bold text-slate-200">{a.agrNumber}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                              a.status === 'overdue' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'
+                            }`}>{a.status}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px] text-slate-400">
+                            <span>Balance: {formatCurrency(a.balance)}</span>
+                            <span>Due: {formatDate(a.dueDate)}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 justify-end border-t border-slate-900/60 pt-2 mt-1">
+                            <button 
+                              onClick={() => setSelectedAgreementId(a.id)} 
+                              className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
+                            >
+                              <Eye size={11} className="text-amber-500" /> View
+                            </button>
+                            <button 
+                              onClick={() => printLegalAgreement(a, c)} 
+                              className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
+                            >
+                              <Printer size={11} className="text-amber-500" /> Print Agr
+                            </button>
+                            <button 
+                              onClick={() => printAccountInvoice(a, c)} 
+                              className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
+                            >
+                              <Printer size={11} className="text-amber-500" /> Print Inv
+                            </button>
+                            <button 
+                              onClick={() => printSalaryConsent(a, c)} 
+                              className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
+                            >
+                              <Printer size={11} className="text-amber-500" /> Print Consent
+                            </button>
+                            <button 
+                              onClick={() => printAffordabilityDeclaration(a, c)} 
+                              className="px-2 py-1 bg-slate-900 border border-slate-800 text-[10px] rounded hover:border-slate-700 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
+                            >
+                              <Printer size={11} className="text-amber-500" /> Print Afford
+                            </button>
+                            <button 
+                              onClick={() => handlePreviewDoc(a, c, 'invoice')} 
+                              className="px-1.5 py-1 text-[9px] text-amber-500 hover:text-amber-400 transition font-semibold"
+                              title="View Invoice Preview"
+                            >
+                              View Inv
+                            </button>
+                            <button 
+                              onClick={() => handleDownloadRtf(a, c, 'invoice')} 
+                              className="px-1.5 py-1 text-[9px] text-slate-500 hover:text-slate-300 transition"
+                              title="Backup Download Invoice (.rtf)"
+                            >
+                              Inv.RTF
+                            </button>
+                            <button 
+                              onClick={() => handlePreviewDoc(a, c, 'aod')} 
+                              className="px-1.5 py-1 text-[9px] text-amber-500 hover:text-amber-400 transition font-semibold"
+                              title="View AoD Preview"
+                            >
+                              View AoD
+                            </button>
+                            <button 
+                              onClick={() => handleDownloadRtf(a, c, 'aod')} 
+                              className="px-1.5 py-1 text-[9px] text-slate-500 hover:text-slate-300 transition"
+                              title="Backup Download AoD (.rtf)"
+                            >
+                              AoD.RTF
+                            </button>
+                          </div>
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {activeSubTab === 'whatsapp' && (
+              <div className="space-y-4">
+                {/* WHATSAPP CONNECTION STATUS NOTIFICATION */}
+                {c.hasWhatsApp === 'no' ? (
+                  <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-1">
+                    <div className="text-[11px] font-bold text-amber-500 flex items-center gap-1.5">
+                      ⚠️ NO WHATSAPP ON MAIN PHONE
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      Primary phone ({c.phone}) has no WhatsApp. Alternatives will route to Next of Kin:
+                    </div>
+                    <div className="text-[11px] font-semibold text-slate-200 pt-1">
+                      NOK Name: {c.nokName || '—'}
+                    </div>
+                    <div className="text-[11px] font-semibold text-slate-200">
+                      NOK WhatsApp: {c.nokPhone || '—'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                    <div className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                      ✅ WHATSAPP CONNECTED
+                    </div>
+                    <div className="text-[11px] text-slate-300 mt-1">
+                      Routing statement messages directly to cell number: <span className="font-bold text-slate-100">{c.phone}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* ONE CLICK STATEMENT SEND BUTTON */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => handleSendWhatsAppStatement(c, exposure, activeCustAgreements)}
+                    className="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition cursor-pointer text-xs shadow-lg shadow-emerald-950/30"
+                  >
+                    💬 Send Statement via WhatsApp
+                  </button>
+                  <p className="text-[10px] text-slate-500 text-center mt-1">
+                    Compiles outstanding ledger, active agreements, and EFT details.
+                  </p>
+                </div>
+
+                {/* BACKUP CHAT TRANSCRIPT TIMELINE */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">WhatsApp Communication History</span>
+                  
+                  <div className="bg-slate-950 border border-slate-850 rounded-xl p-3 h-[200px] overflow-y-auto flex flex-col gap-2.5">
+                    {whatsappLogs.length === 0 ? (
+                      <div className="text-center my-auto text-xs text-slate-500">
+                        No prior communication backlogs.
+                      </div>
+                    ) : (
+                      whatsappLogs.map(log => (
+                        <div
+                          key={log.id}
+                          className={`flex flex-col max-w-[85%] rounded-xl p-2.5 text-xs ${
+                            log.direction === 'sent'
+                              ? 'bg-slate-900 border border-slate-800 self-end text-right'
+                              : 'bg-emerald-950/30 border border-emerald-500/10 self-start text-left'
+                          }`}
+                        >
+                          <div className="flex justify-between gap-4 text-[9px] text-slate-500 font-medium mb-1">
+                            <span className="font-bold text-slate-400">{log.senderName}</span>
+                            <span>{log.date}</span>
+                          </div>
+                          <p className="text-slate-300 leading-tight whitespace-pre-wrap select-all">{log.message}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* QUICK ACTIONS TEMPLATES */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Quick Message Templates</span>
+                  <div className="grid grid-cols-3 gap-1.5 text-[9px] text-slate-300">
+                    <button
+                      type="button"
+                      onClick={() => setWhatsappInput("Dear Customer, your credit agreement with SASSC is in arrears. Please settle outstanding balances immediately to avoid adverse credit bureau listing and formal legal action.")}
+                      className="p-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded text-center truncate cursor-pointer"
+                      title="Repayment Warning"
+                    >
+                      Arrears Warning
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWhatsappInput(`Pledge Agreement: Client has pledged a payment of R_______ on YYYY-MM-DD. Please confirm POP via WhatsApp.`)}
+                      className="p-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded text-center truncate cursor-pointer"
+                      title="Pledge Log"
+                    >
+                      Pledge Promise
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWhatsappInput("NCA Audit: Please submit your updated 3 months bank statement and your latest SASSA/salary slip to satisfy credit review requirements.")}
+                      className="p-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded text-center truncate cursor-pointer"
+                      title="NCA Audit request"
+                    >
+                      Audit Request
+                    </button>
+                  </div>
+                </div>
+
+                {/* MANUAL LOG INPUT */}
+                <div className="space-y-2 pt-1 border-t border-slate-800">
+                  <textarea
+                    value={whatsappInput}
+                    onChange={e => setWhatsappInput(e.target.value)}
+                    placeholder="Type or paste manual chat history backup..."
+                    className="w-full h-14 bg-slate-950 border border-slate-850 rounded-lg p-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-slate-700"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveManualWhatsAppLog(c, whatsappInput, 'sent')}
+                      className="flex-1 py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold rounded-lg text-slate-300 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      📤 Log Sent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveManualWhatsAppLog(c, whatsappInput, 'received')}
+                      className="flex-1 py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[10px] font-bold rounded-lg text-slate-300 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      📥 Log Received
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeSubTab === 'collections' && (
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between">
+                  <span>Recent Collection Logs</span>
+                  <button onClick={() => onAddCollectionNote(c.id, '')} className="text-amber-500 hover:underline text-[10px] cursor-pointer">+ Log Note</button>
+                </h4>
+                
+                {activeCustNotes.length === 0 ? (
+                  <div className="text-center p-4 bg-slate-950/40 rounded-lg text-xs text-slate-500 border border-slate-900">No collection records captured.</div>
+                ) : (
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto">
+                    {activeCustNotes.slice().reverse().map(note => (
+                      <div key={note.id} className="p-2.5 bg-slate-950 border border-slate-850 rounded-lg text-xs space-y-1">
+                        <div className="flex justify-between text-[10px] text-slate-500">
+                          <span>{formatDate(note.date)} — {note.type}</span>
+                          <span>by {note.createdBy}</span>
+                        </div>
+                        <p className="text-slate-300 leading-tight">{note.note}</p>
+                        {note.promiseAmount > 0 && (
+                          <div className="text-[10px] text-amber-500 font-medium">
+                            Promise: {formatCurrency(note.promiseAmount)} by {formatDate(note.promiseDate)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -576,7 +954,7 @@ export default function CustomersView({
             const custAgrs = agreements.filter(a => a.customerId === c.id);
             const custPays = payments.filter(p => p.customerId === c.id);
             const totalOutstanding = getCustomerExposure(c.id, agreements);
-            const totalPaid = custPays.reduce((sum, p) => sum + p.amount, 0);
+            const totalPaid = calculateCustomerPayments(custPays);
 
             return (
               <div className="space-y-6 text-slate-950 font-sans" id="printable-statement">
@@ -709,6 +1087,56 @@ export default function CustomersView({
               Personal Information
             </div>
 
+            {/* Profile Photo Upload */}
+            <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 space-y-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Camera size={13} className="text-amber-500" /> Customer Profile Photo (NCA Default Verification)
+              </span>
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="relative w-24 h-24 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                  {photoUrl ? (
+                    <>
+                      <img src={photoUrl} alt="Profile preview" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setPhotoUrl('')}
+                        className="absolute bottom-1 right-1 bg-rose-500 hover:bg-rose-600 text-white rounded p-1 text-[10px] font-bold shadow transition cursor-pointer"
+                        title="Remove Photo"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center text-slate-500 text-[10px] text-center p-2">
+                      <User size={24} className="text-slate-600 mb-1" />
+                      No Photo
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 w-full text-center sm:text-left space-y-1.5">
+                  <div className="text-[11px] text-slate-400">
+                    Upload or capture a customer profile picture. Highly recommended for identifying default/debt collection portfolios securely.
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                    <label className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-200 border border-slate-800 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer text-[11px] transition">
+                      <Upload size={12} className="text-amber-500" /> Choose Photo File
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {photoUrl && (
+                      <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                        <CheckCircle2 size={12} /> Ready (Compressed)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="form-group">
                 <label>Full Display Name *</label>
@@ -718,6 +1146,25 @@ export default function CustomersView({
                 <label>Cell Number (Phone) *</label>
                 <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} required className="bg-slate-950 border border-slate-800 text-slate-100 p-2 rounded" />
               </div>
+              <div className="form-group">
+                <label>Registered on WhatsApp Messenger? *</label>
+                <select value={hasWhatsApp} onChange={e => setHasWhatsApp(e.target.value as any)} className="bg-slate-950 border border-slate-800 text-slate-100 p-2 rounded w-full">
+                  <option value="yes">Yes, registered on this phone number</option>
+                  <option value="no">No WhatsApp on this number (Use Next of Kin)</option>
+                </select>
+              </div>
+              {hasWhatsApp === 'no' && (
+                <>
+                  <div className="form-group">
+                    <label>Next of Kin WhatsApp Name *</label>
+                    <input type="text" value={nokName} onChange={e => setNokName(e.target.value)} required placeholder="Spouse, Sibling, Child name..." className="bg-slate-950 border border-slate-800 text-slate-100 p-2 rounded w-full" />
+                  </div>
+                  <div className="form-group">
+                    <label>Next of Kin WhatsApp Number *</label>
+                    <input type="tel" value={nokPhone} onChange={e => setNokPhone(e.target.value)} required placeholder="e.g. 0712345678" className="bg-slate-950 border border-slate-800 text-slate-100 p-2 rounded w-full" />
+                  </div>
+                </>
+              )}
               <div className="form-group">
                 <label>First Names (NCA detail)</label>
                 <input type="text" value={firstNames} onChange={e => setFirstNames(e.target.value)} className="bg-slate-950 border border-slate-800 text-slate-100 p-2 rounded" />
