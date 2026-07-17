@@ -60,9 +60,10 @@ export default function App() {
   const [isNoteOpen, setIsNoteOpen] = useState(false);
 
   const syncDatabase = () => {
-    // Seed sample data if database is empty
+    // Seed sample data if database is empty and not explicitly marked as seeded/cleared
+    const isSeeded = localStorage.getItem('sassc2_seeded') === 'true';
     const list = localStorage.getItem('sassc2_customers') || localStorage.getItem('sassc_customers');
-    if (!list) {
+    if (!list && !isSeeded) {
       seedSampleData();
     }
 

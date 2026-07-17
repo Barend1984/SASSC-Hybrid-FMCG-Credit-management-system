@@ -390,4 +390,49 @@ export const seedSampleData = () => {
   saveDBList('stock', stock);
   saveDBList('users', [defaultAdmin]);
   saveDBObj('settings', settings);
+  localStorage.setItem('sassc2_seeded', 'true');
+};
+
+export const clearAllProductionData = () => {
+  saveDBList('customers', []);
+  saveDBList('agreements', []);
+  saveDBList('sales', []);
+  saveDBList('payments', []);
+  saveDBList('collection_notes', []);
+  saveDBList('cashDays', []);
+  saveDBList('stock', []);
+  saveDBList('cashMovements', []);
+  saveDBList('stockTakes', []);
+  saveDBList('writeOffs', []);
+  saveDBList('override_logs', []);
+  saveDBList('whatsapp_logs', []);
+  saveDBList('accountingPeriods', []);
+  saveDBList('accountingAuditLogs', []);
+  saveDBList('barcodeMappings', []);
+  saveDBList('stockAdjustments', []);
+
+  const defaultAdmin: User = {
+    id: 'u1',
+    fullName: 'Main Admin',
+    username: 'admin',
+    passwordHash: hashPassword('admin123'),
+    role: 'main_admin',
+    permissions: {},
+    isActive: true,
+    created: new Date().toISOString(),
+    lastLoginAt: ''
+  };
+  saveDBList('users', [defaultAdmin]);
+
+  const settings = loadDBObj<BusinessSettings>('settings', {
+    bizName: 'Phoenix Financial Services',
+    tradingAs: 'SASSC',
+    owner: 'Claudine Pike du Plessis',
+    phone: '086 100 2472',
+    address: '50A Von Weilligh Street, Rustenburg, 0300',
+    ncr: 'NCR/CP/10452'
+  });
+  saveDBObj('settings', settings);
+
+  localStorage.setItem('sassc2_seeded', 'true');
 };

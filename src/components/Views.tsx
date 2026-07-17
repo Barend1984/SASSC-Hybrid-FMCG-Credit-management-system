@@ -7,7 +7,8 @@ import {
 import { 
   loadDBList, saveDBList, generateUid, getCustomerExposure, 
   checkCustomerOverdue, getPermissionList, getRolePermissions, 
-  calcNcaFees, hashPassword, seedSampleData, loadDBObj, saveDBObj 
+  calcNcaFees, hashPassword, seedSampleData, loadDBObj, saveDBObj,
+  clearAllProductionData
 } from '../utils/database';
 import {
   calculateCashOnHand,
@@ -2830,12 +2831,20 @@ export function SettingsView({ onRefreshDB }: SettingsViewProps) {
   };
 
   const handleEraseAllData = () => {
-    if (!window.confirm('⚠️ WARNING: This will completely ERASE all local transactions, client records, and inventory data, and seed clean sample details. Are you sure?')) return;
+    if (!window.confirm('WARNING: This will completely ERASE all local transactions, client records, and inventory data, and seed clean sample details. Are you sure?')) return;
     localStorage.clear();
     seedSampleData();
     loadSettings();
     onRefreshDB();
     alert('Database successfully reset to initial seed data.');
+  };
+
+  const handleClearProductionData = () => {
+    if (!window.confirm('WARNING: This will permanently DELETE all customers, agreements, payments, stock catalog items, sales, and registers to start with a blank database for production. This action cannot be undone. Are you sure?')) return;
+    clearAllProductionData();
+    loadSettings();
+    onRefreshDB();
+    alert('Database successfully cleared. All transaction history has been wiped. You are ready to start capturing real production information!');
   };
 
   return (
@@ -2911,14 +2920,26 @@ export function SettingsView({ onRefreshDB }: SettingsViewProps) {
         </div>
       </div>
 
-      <div className="p-5 border border-rose-500/20 bg-rose-500/5 rounded-xl flex items-center justify-between gap-4">
-        <div className="text-xs space-y-1">
-          <h4 className="font-bold text-rose-400 uppercase tracking-wider text-[10px]">Developer Utilities & Hard-Resets</h4>
-          <p className="text-slate-400 leading-normal max-w-lg">Reset database back to standard factory settings with complete clean mock files. Useful for quick sandbox presentation audits.</p>
+      <div className="p-5 border border-rose-500/20 bg-rose-500/5 rounded-xl space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="text-xs space-y-1">
+            <h4 className="font-bold text-rose-400 uppercase tracking-wider text-[10px]">Developer Utilities & Hard-Resets</h4>
+            <p className="text-slate-400 leading-normal max-w-lg">Reset database back to standard factory settings with complete clean mock files. Useful for quick sandbox presentation audits.</p>
+          </div>
+          <button onClick={handleEraseAllData} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs w-full sm:w-auto">
+            Hard-Reset Database (Demo Data)
+          </button>
         </div>
-        <button onClick={handleEraseAllData} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs">
-          ⚠️ Hard-Reset Database
-        </button>
+
+        <div className="pt-4 border-t border-rose-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="text-xs space-y-1">
+            <h4 className="font-bold text-amber-500 uppercase tracking-wider text-[10px]">Go-Live Production Preparation</h4>
+            <p className="text-slate-400 leading-normal max-w-lg">Erase all mock transactions, client profiles, stock catalog items, and daily logs. Wipes local cache and Firestore to leave a blank, clean canvas ready for real commercial operations.</p>
+          </div>
+          <button onClick={handleClearProductionData} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold rounded-lg text-xs w-full sm:w-auto">
+            Clear Database for Production (Start Fresh)
+          </button>
+        </div>
       </div>
     </div>
   );
