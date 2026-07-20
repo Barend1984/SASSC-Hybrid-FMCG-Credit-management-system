@@ -378,8 +378,8 @@ export const seedSampleData = () => {
   };
 
   const settings: BusinessSettings = {
-    bizName: 'Phoenix Financial Services',
-    tradingAs: 'SASSC',
+    bizName: 'Lerato Community Financial Services',
+    tradingAs: 'Lerato',
     owner: 'Claudine Pike du Plessis',
     phone: '086 100 2472',
     address: '50A Von Weilligh Street, Rustenburg, 0300',
@@ -425,8 +425,8 @@ export const clearAllProductionData = () => {
   saveDBList('users', [defaultAdmin]);
 
   const settings = loadDBObj<BusinessSettings>('settings', {
-    bizName: 'Phoenix Financial Services',
-    tradingAs: 'SASSC',
+    bizName: 'Lerato Community Financial Services',
+    tradingAs: 'Lerato',
     owner: 'Claudine Pike du Plessis',
     phone: '086 100 2472',
     address: '50A Von Weilligh Street, Rustenburg, 0300',

@@ -337,7 +337,7 @@ export function OverdueView({ agreements, customers, onNavigate }: OverdueViewPr
         <div className="text-xs space-y-1">
           <h4 className="font-bold uppercase tracking-wider text-[10px]">Arrears exposure block</h4>
           <p className="leading-relaxed text-slate-300">
-            SASSC credit policy dictates that any client with an outstanding balance that has exceeded its payday due date will be marked as <strong>BLOCKED</strong>. No additional groceries credit or loan capital can be compositions on their account until the overdue ledger is fully repaid.
+            Lerato credit policy dictates that any client with an outstanding balance that has exceeded its payday due date will be marked as <strong>BLOCKED</strong>. No additional groceries credit or loan capital can be compositions on their account until the overdue ledger is fully repaid.
           </p>
         </div>
       </div>
@@ -437,7 +437,7 @@ export function CollectionsView({ collectionNotes, customers, agreements, onAddN
               if (win) {
                 const html = `
                   <html><head><title>Collections Printable Register</title><style>body{font-family:sans-serif;font-size:12px;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:8px}th{background:#eee}</style></head>
-                  <body><h2>SASSC Collections Call Logs</h2>
+                  <body><h2>Lerato Collections Call Logs</h2>
                   <table><thead><tr><th>Date</th><th>Client Name</th><th>Log Type</th><th>Pledge Amount</th><th>Promise Date</th><th>Call Note Summary</th></tr></thead><tbody>
                   ${collectionNotes.map(n => {
                     const cName = customers.find(c => c.id === n.customerId)?.name || 'Unknown';
@@ -2775,8 +2775,8 @@ export function SettingsView({ onRefreshDB }: SettingsViewProps) {
 
   const loadSettings = () => {
     const s = loadDBObj<BusinessSettings>('settings', {
-      bizName: 'Phoenix Financial Services',
-      tradingAs: 'SASSC',
+      bizName: 'Lerato Community Financial Services',
+      tradingAs: 'Lerato',
       owner: 'Claudine Pike du Plessis',
       phone: '086 100 2472',
       address: '50A Von Weilligh Street, Rustenburg, 0300',

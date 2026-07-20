@@ -184,8 +184,7 @@ export default function App() {
       {/* Top Banner & Mobile Nav Bar */}
       <header className="lg:hidden bg-slate-900 border-b border-slate-800 py-3 px-4 flex justify-between items-center sticky top-0 z-40">
         <div className="flex items-center gap-2">
-          <span className="p-1.5 bg-amber-500 rounded text-slate-950 font-black text-xs">SASSC</span>
-          <span className="text-sm font-bold tracking-tight text-slate-100">Phoenix Financial</span>
+          <span className="text-sm font-bold tracking-tight text-slate-100">Lerato Community Financial Service</span>
         </div>
         <button 
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -209,10 +208,10 @@ export default function App() {
           <div className="flex flex-col flex-1 min-h-0">
             {/* Header logo */}
             <div className="hidden lg:flex items-center gap-2.5 px-6 py-5 border-b border-slate-850">
-              <span className="px-2 py-1 bg-amber-500 rounded text-slate-950 font-black text-sm tracking-tighter">SASSC</span>
               <div>
-                <span className="text-sm font-bold block tracking-tight text-slate-100 leading-none">Phoenix Financial</span>
-                <span className="text-[9px] text-slate-500 font-bold tracking-widest uppercase mt-0.5 block">NCA Reg: NCR/CP/10452</span>
+                <span className="text-sm font-bold block tracking-tight text-slate-100 leading-none">Lerato Community</span>
+                <span className="text-[10px] text-slate-400 font-medium block mt-0.5">Financial Service</span>
+                <span className="text-[9px] text-slate-500 font-bold tracking-widest uppercase mt-1 block">NCA Reg: NCR/CP/10452</span>
               </div>
             </div>
 

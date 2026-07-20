@@ -333,10 +333,10 @@ export default function CustomersView({
     }
 
     const bankText = customer.bank?.name 
-      ? `*Banking Details for EFT Repayments:*\nBank: ${customer.bank.name}\nAccount Holder: ${customer.bank.holder || 'SASSC'}\nAccount No: ${customer.bank.accountNumber}\nBranch Code: ${customer.bank.branchCode || 'Default'}\nReference: #${customer.fileNo}`
-      : `*Banking Details for EFT Repayments:*\nPlease use SASSC main EFT account with Reference: #${customer.fileNo}`;
+      ? `*Banking Details for EFT Repayments:*\nBank: ${customer.bank.name}\nAccount Holder: ${customer.bank.holder || 'Lerato'}\nAccount No: ${customer.bank.accountNumber}\nBranch Code: ${customer.bank.branchCode || 'Default'}\nReference: #${customer.fileNo}`
+      : `*Banking Details for EFT Repayments:*\nPlease use Lerato main EFT account with Reference: #${customer.fileNo}`;
 
-    const textMessage = `*SASSC CREDIT MANAGEMENT SYSTEM*
+    const textMessage = `*LERATO CREDIT MANAGEMENT SYSTEM*
 ----------------------------------------
 *Statement Date:* ${formattedDate}
 *Customer Profile:* ${customer.name}
@@ -350,7 +350,7 @@ ${bankText}
 
 Please send your Proof of Payment as soon as payment is completed.
 Thank you,
-SASSC Credit Control Operations.`;
+Lerato Credit Control Operations.`;
 
     let sanitizedPhone = targetNo.replace(/\s+/g, '').replace(/[-()]/g, '');
     if (sanitizedPhone.startsWith('0')) {
@@ -851,7 +851,7 @@ SASSC Credit Control Operations.`;
                   <div className="grid grid-cols-3 gap-1.5 text-[9px] text-slate-300">
                     <button
                       type="button"
-                      onClick={() => setWhatsappInput("Dear Customer, your credit agreement with SASSC is in arrears. Please settle outstanding balances immediately to avoid adverse credit bureau listing and formal legal action.")}
+                      onClick={() => setWhatsappInput("Dear Customer, your credit agreement with Lerato is in arrears. Please settle outstanding balances immediately to avoid adverse credit bureau listing and formal legal action.")}
                       className="p-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded text-center truncate cursor-pointer"
                       title="Repayment Warning"
                     >
@@ -961,8 +961,8 @@ SASSC Credit Control Operations.`;
                 {/* Brand Banner */}
                 <div className="flex justify-between border-b-2 border-slate-900 pb-4">
                   <div>
-                    <h2 className="text-xl font-extrabold tracking-tight">SASSC — South African Social Services</h2>
-                    <p className="text-xs text-slate-600">Trading under Phoenix Financial Services (NCR Reg: NCR/CP/10452)</p>
+                    <h2 className="text-xl font-extrabold tracking-tight">Lerato Community Financial Services</h2>
+                    <p className="text-xs text-slate-600">NCR Registered Credit Provider (Reg: NCR/CP/10452)</p>
                     <p className="text-xs text-slate-600">Rustenburg, NW</p>
                   </div>
                   <div className="text-right">

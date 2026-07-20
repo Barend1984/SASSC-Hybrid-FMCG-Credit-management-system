@@ -36,7 +36,7 @@ export const generateAcknowledgementOfDebt = (agreement: Agreement, customer: Cu
 
 \\b ACKNOWLEDGEMENT OF DEBT\\b0\\par
 
-South African Social Services Company\\par
+Lerato Community Financial service\\par
 
 ------------------------------------------------------------\\par
 
@@ -44,7 +44,7 @@ I, ${customerName}, with ID Number ${idNum}, hereby acknowledge that I have rece
 
 I agree to repay the total outstanding amount of R${totalRepay} on or before ${repaymentDate}.\\par
 
-I understand that this agreement forms part of the credit agreement entered into with SASSC.\\par
+I understand that this agreement forms part of the credit agreement entered into with Lerato Community Financial service.\\par
 
 ------------------------------------------------------------\\par
 
@@ -63,13 +63,13 @@ Customer Signature: ___________________________\\par
 
 Date: ___________________________\\par
 
-SASSC Representative: _________________________\\par
+Lerato Representative: _________________________\\par
 
 }`;
 };
 
 /**
- * Generates the "SASSC Account Invoice" RTF document
+ * Generates the "Lerato Account Invoice" RTF document
  */
 export const generateAccountInvoice = (agreement: Agreement, customer: Customer): string => {
   const customerName = `${customer.firstNames} ${customer.surname}`.trim() || customer.name;
@@ -112,9 +112,9 @@ export const generateAccountInvoice = (agreement: Agreement, customer: Customer)
 \\par \\pard\\plain \\s0\\rtlch\\af6\\afs24\\alang1081 \\ltrch\\lang7177\\langfe2052\\hich\\af3\\loch\\widctlpar\\hyphpar0\\ltrpar\\cf0\\f3\\fs24\\lang7177\\kerning1\\dbch\\af8\\langfe2052\\ql\\ltrpar\\loch
 
 \\par \\pard\\plain \\s0\\rtlch\\af6\\afs24\\alang1081 \\ltrch\\lang7177\\langfe2052\\hich\\af3\\loch\\widctlpar\\hyphpar0\\ltrpar\\cf0\\f3\\fs24\\lang7177\\kerning1\\dbch\\af8\\langfe2052\\ql\\ltrpar{\\loch
-\\\\b SASSC ACCOUNT INVOICE\\\\b0\\\\par}
+\\\\b LERATO ACCOUNT INVOICE\\\\b0\\\\par}
 \\par \\pard\\plain \\s0\\rtlch\\af6\\afs24\\alang1081 \\ltrch\\lang7177\\langfe2052\\hich\\af3\\loch\\widctlpar\\hyphpar0\\ltrpar\\cf0\\f3\\fs24\\lang7177\\kerning1\\dbch\\af8\\langfe2052\\ql\\ltrpar{\\loch
-South African Social Services Company\\\\par}
+Lerato Community Financial service\\\\par}
 \\par \\pard\\plain \\s0\\rtlch\\af6\\afs24\\alang1081 \\ltrch\\lang7177\\langfe2052\\hich\\af3\\loch\\widctlpar\\hyphpar0\\ltrpar\\cf0\\f3\\fs24\\lang7177\\kerning1\\dbch\\af8\\langfe2052\\ql\\ltrpar{\\loch
 ------------------------------------------------------------\\\\par}
 \\par \\pard\\plain \\s0\\rtlch\\af6\\afs24\\alang1081 \\ltrch\\lang7177\\langfe2052\\hich\\af3\\loch\\widctlpar\\hyphpar0\\ltrpar\\cf0\\f3\\fs24\\lang7177\\kerning1\\dbch\\af8\\langfe2052\\ql\\ltrpar\\loch

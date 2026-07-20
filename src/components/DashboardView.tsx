@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Sale, Agreement, Payment, Customer, CashMovement, CashDay, Product, WriteOff, OverrideLog } from '../types';
 import { getCustomerExposure, checkCustomerOverdue, loadDBList, saveDBList, generateUid } from '../utils/database';
 import { 
@@ -82,11 +82,15 @@ export default function DashboardView({
   const totalBookExposure = loanPortfolio.totalBookValue;
 
   // Load database slices for exact financial reconciliation
-  const cashMovements = useMemo(() => loadDBList<CashMovement>('cashMovements'), []);
-  const cashDays = useMemo(() => loadDBList<CashDay>('cashDays'), []);
-  const currentStock = useMemo(() => loadDBList<Product>('stock'), []);
-  const writeOffs = useMemo(() => loadDBList<WriteOff>('writeOffs'), []);
+  const cashMovements = useMemo(() => loadDBList<CashMovement>('cashMovements'), [sales, payments]);
+  const cashDays = useMemo(() => loadDBList<CashDay>('cashDays'), [sales, payments]);
+  const currentStock = useMemo(() => loadDBList<Product>('stock'), [sales, payments]);
+  const writeOffs = useMemo(() => loadDBList<WriteOff>('writeOffs'), [sales, payments]);
   const [overrideLogs, setOverrideLogs] = useState<OverrideLog[]>(() => loadDBList<OverrideLog>('override_logs'));
+
+  useEffect(() => {
+    setOverrideLogs(loadDBList<OverrideLog>('override_logs'));
+  }, [sales, payments]);
 
   // Compute Cash on Hand & Bank Cash via Financial Engine
   const cashOnHand = useMemo(() => {
@@ -251,7 +255,7 @@ export default function DashboardView({
   // Handle Supervisor Unlock action
   const handleSupervisorUnlock = (e: React.FormEvent) => {
     e.preventDefault();
-    if (supervisorPasscode === 'SASSC-SUPERVISOR-2026' || supervisorPasscode === '1234') {
+    if (supervisorPasscode === 'LERATO-SUPERVISOR-2026' || supervisorPasscode === '1234') {
       setIsSupervisorMode(true);
       setSupervisorStatusMessage('Supervisor authorization authenticated. System overrides active.');
       setSupervisorPasscode('');
@@ -304,7 +308,7 @@ export default function DashboardView({
             Welcome Back, Principal
           </h2>
           <p className="text-xs text-slate-400">
-            SASSC Core Management Console · Phoenix Financial Services
+            Lerato Core Management Console · Lerato Community Financial Services
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

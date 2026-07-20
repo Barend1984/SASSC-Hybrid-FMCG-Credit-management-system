@@ -1,6 +1,6 @@
 {
   "name": "Phoenix Financial Services Console",
-  "description": "Administrative management console and credit compliance suite for Phoenix Financial Services.",
+  "description": "Administrative management console and credit compliance suite for Lerato Community Financial Services.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

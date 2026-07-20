@@ -201,8 +201,8 @@ export const printLegalAgreement = (agreement: Agreement, customer: Customer) =>
     </head>
     <body>
       <div class="header">
-        <h1>South African Social Services Company</h1>
-        <p><strong>SASSC (Pty) Ltd — Trading under Phoenix Financial Services</strong></p>
+        <h1>Lerato Community Financial Services</h1>
+        <p><strong>Lerato (Pty) Ltd — Trading under Lerato Community Financial Services</strong></p>
         <p>Company Reg No: 2025/685262/07 | NCR Reg: NCR/CP/10452</p>
         <p>Physical Address: 50A Von Weilligh Street, Rustenburg, 0300 | Tel: 086 100 2472 | Email: CBRDUPLESSIS.X2@GMAIL.COM</p>
       </div>
@@ -273,7 +273,7 @@ export const printLegalAgreement = (agreement: Agreement, customer: Customer) =>
         </tr>
         <tr>
           <td class="label">Nominal Annual Interest Rate:</td>
-          <td class="value" style="text-align: right;">0.00% (Interest-Free SASSC Pension Welfare Program)</td>
+          <td class="value" style="text-align: right;">0.00% (Interest-Free Lerato Pension Welfare Program)</td>
         </tr>
         <tr class="total-row">
           <td>TOTAL REPAYABLE COST OF CREDIT (VAT-INCL):</td>
@@ -302,14 +302,14 @@ export const printLegalAgreement = (agreement: Agreement, customer: Customer) =>
       </div>
 
       <div class="terms-text">
-        I, the undersigned, <strong>${customerName}</strong>, do hereby admit and acknowledge that I am lawfully, truly and justly indebted to <strong>SASSC (Pty) Ltd</strong> in the sum of <strong>${totalRepay}</strong>, arising from the principal goods and loans specified in credit invoice <strong>${agreementNumber}</strong> dated <strong>${agreementDate}</strong>. I hereby bind myself to the following Terms &amp; Conditions under South African law:
+        I, the undersigned, <strong>${customerName}</strong>, do hereby admit and acknowledge that I am lawfully, truly and justly indebted to <strong>Lerato (Pty) Ltd</strong> in the sum of <strong>${totalRepay}</strong>, arising from the principal goods and loans specified in credit invoice <strong>${agreementNumber}</strong> dated <strong>${agreementDate}</strong>. I hereby bind myself to the following Terms &amp; Conditions under South African law:
         <ol>
-          <li><strong>Undertaking to Pay:</strong> I unconditionally undertake to pay SASSC (Pty) Ltd the total outstanding repayable sum on or before the due date specified. All payments shall be made free of bank exchange or deduction at the registered offices of SASSC or via direct debit order / bank EFT.</li>
-          <li><strong>DebiCheck / Payroll Consent:</strong> I hereby expressly authorize and instruct SASSC to submit a DebiCheck debit order instruction or a payroll deduction mandate against my designated bank account for the amount of ${totalRepay} on the next Social Grant / Payday scheduled for ${repaymentDate}.</li>
-          <li><strong>Consent to Jurisdiction:</strong> In terms of Section 45 of the Magistrate's Court Act 32 of 1944, I hereby consent to the jurisdiction of the Magistrate's Court having jurisdiction in respect of any legal action which may be instituted against me by SASSC arising from this agreement.</li>
-          <li><strong>Credit Bureau Consent:</strong> I consent and acknowledge that SASSC may transmit data about my credit profile and payment performance to registered Credit Bureaus in terms of Section 70 and Regulation 19 of the National Credit Act. In the event of default, my profile may be listed accordingly.</li>
-          <li><strong>Default and Collection Costs:</strong> Should I fail to pay any single amount on the due date, the entire balance becomes immediately due, and SASSC is entitled to recover default administration charges, interest at the maximum statutory rate, and all legal costs on an attorney-and-client scale, including collection commission.</li>
-          <li><strong>Certificate of Indebtedness:</strong> A certificate signed by any director or manager of SASSC (Pty) Ltd showing the amount of my indebtedness under this agreement shall be prima facie (sufficient) proof of my outstanding balance for purposes of obtaining summary judgment or provisional sentence.</li>
+          <li><strong>Undertaking to Pay:</strong> I unconditionally undertake to pay Lerato (Pty) Ltd the total outstanding repayable sum on or before the due date specified. All payments shall be made free of bank exchange or deduction at the registered offices of Lerato or via direct debit order / bank EFT.</li>
+          <li><strong>DebiCheck / Payroll Consent:</strong> I hereby expressly authorize and instruct Lerato to submit a DebiCheck debit order instruction or a payroll deduction mandate against my designated bank account for the amount of ${totalRepay} on the next Social Grant / Payday scheduled for ${repaymentDate}.</li>
+          <li><strong>Consent to Jurisdiction:</strong> In terms of Section 45 of the Magistrate's Court Act 32 of 1944, I hereby consent to the jurisdiction of the Magistrate's Court having jurisdiction in respect of any legal action which may be instituted against me by Lerato arising from this agreement.</li>
+          <li><strong>Credit Bureau Consent:</strong> I consent and acknowledge that Lerato may transmit data about my credit profile and payment performance to registered Credit Bureaus in terms of Section 70 and Regulation 19 of the National Credit Act. In the event of default, my profile may be listed accordingly.</li>
+          <li><strong>Default and Collection Costs:</strong> Should I fail to pay any single amount on the due date, the entire balance becomes immediately due, and Lerato is entitled to recover default administration charges, interest at the maximum statutory rate, and all legal costs on an attorney-and-client scale, including collection commission.</li>
+          <li><strong>Certificate of Indebtedness:</strong> A certificate signed by any director or manager of Lerato (Pty) Ltd showing the amount of my indebtedness under this agreement shall be prima facie (sufficient) proof of my outstanding balance for purposes of obtaining summary judgment or provisional sentence.</li>
         </ol>
       </div>
 
@@ -323,8 +323,8 @@ export const printLegalAgreement = (agreement: Agreement, customer: Customer) =>
           </div>
           <div class="sig-box" style="border-top: 1px solid #000;">
             <br/><br/>
-            <strong>SASSC REPRESENTATIVE SIGNATURE</strong><br/>
-            For SASSC (Pty) Ltd<br/>
+            <strong>LERATO REPRESENTATIVE SIGNATURE</strong><br/>
+            For Lerato (Pty) Ltd<br/>
             Date: ________________________
           </div>
           <div class="sig-box" style="border-top: 1px solid #000;">
@@ -337,7 +337,7 @@ export const printLegalAgreement = (agreement: Agreement, customer: Customer) =>
       </div>
 
       <div class="watermark">
-        SASSC Compliance Department | Document Ref: SASSC-AOD-${agreementNumber} | Generated on ${new Date().toLocaleString('en-ZA')}
+        Lerato Compliance Department | Document Ref: LERATO-AOD-${agreementNumber} | Generated on ${new Date().toLocaleString('en-ZA')}
       </div>
     </body>
     </html>
@@ -532,8 +532,8 @@ export const printAccountInvoice = (agreement: Agreement, customer: Customer) =>
     <body>
       <div class="header">
         <div class="header-left">
-          <h1>South African Social Services Company</h1>
-          <p>SASSC (Pty) Ltd — Trading under Phoenix Financial Services (Reg: 2025/685262/07 | NCR: NCR/CP/10452)</p>
+          <h1>Lerato Community Financial Services</h1>
+          <p>Lerato (Pty) Ltd — Trading under Lerato Community Financial Services (Reg: 2025/685262/07 | NCR: NCR/CP/10452)</p>
           <p>Address: 50A Von Weilligh Street, Rustenburg, 0300</p>
           <p>Tel: 086 100 2472 | Email: CBRDUPLESSIS.X2@GMAIL.COM</p>
         </div>
@@ -556,7 +556,7 @@ export const printAccountInvoice = (agreement: Agreement, customer: Customer) =>
         </div>
         <div class="details-box">
           <h3>Payment Terms &amp; Settlement</h3>
-          <p><strong>Account Class:</strong> SASSC Pensioner Grocery Credit</p>
+          <p><strong>Account Class:</strong> Lerato Pensioner Grocery Credit</p>
           <p><strong>Interest Rate:</strong> 0.00% Nominal interest</p>
           <p><strong>Repayment Trigger:</strong> Direct debit mandate / EFT repayment</p>
           <p><strong>Repayment Due Date:</strong> ${repaymentDate}</p>
@@ -583,7 +583,7 @@ export const printAccountInvoice = (agreement: Agreement, customer: Customer) =>
           <h4>Repayment Instructions (EFT Bank Routing)</h4>
           <p style="margin: 4px 0;">To settle this outstanding invoice, please transfer funds into the official trust account:</p>
           <p style="margin: 3px 0;"><strong>Bank Name:</strong> First National Bank (FNB)</p>
-          <p style="margin: 3px 0;"><strong>Account Name:</strong> SASSC Credit Collections Trust</p>
+          <p style="margin: 3px 0;"><strong>Account Name:</strong> Lerato Credit Collections Trust</p>
           <p style="margin: 3px 0;"><strong>Account Number:</strong> 629 184 929 39</p>
           <p style="margin: 3px 0;"><strong>Branch Code:</strong> 250655</p>
           <p style="margin: 3px 0;"><strong>EFT Payment Reference:</strong> <code style="font-size: 11px; background-color: #eee; padding: 2px 4px; border-radius: 2px; font-weight: bold; border: 1px solid #ccc;">${invoiceNumber}</code></p>
@@ -1319,7 +1319,7 @@ export const printFreedomOfChoiceMandate = (agreement: Agreement, customer: Cust
         </tr>
         <tr>
           <td class="label">Credit Provider:</td>
-          <td>SASSC Credit Ltd / Phoenix Financial Services</td>
+          <td>Lerato Community Financial Services</td>
           <td class="label">Agreement Number:</td>
           <td><strong>${agreementNumber}</strong></td>
         </tr>
@@ -1347,12 +1347,12 @@ export const printFreedomOfChoiceMandate = (agreement: Agreement, customer: Cust
         
         <div class="option-box">
           <strong>[ ${!isExternal ? '✓' : ' &nbsp; '} ] I ELECT TO PURCHASE THE CREDIT PROVIDER'S INSURANCE</strong><br/>
-          I authorize SASSC/Phoenix to issue the selected credit life insurance policy on my behalf. I understand that the initial monthly premium is specified in my Form 20 Quote and is itemized in my invoice on a declining-balance basis.
+          I authorize Lerato to issue the selected credit life insurance policy on my behalf. I understand that the initial monthly premium is specified in my Form 20 Quote and is itemized in my invoice on a declining-balance basis.
         </div>
 
         <div class="option-box">
           <strong>[ ${isExternal ? '✓' : ' &nbsp; '} ] I ELECT TO PROVIDE AN EXTERNAL INSURANCE POLICY</strong><br/>
-          I waive the internal coverage program. I undertake to submit details of my own external policy and sign the mandatory <strong>Loss Payee Nomination Mandate</strong> to secure SASSC/Phoenix as the primary loss beneficiary up to the outstanding balance.
+          I waive the internal coverage program. I undertake to submit details of my own external policy and sign the mandatory <strong>Loss Payee Nomination Mandate</strong> to secure Lerato as the primary loss beneficiary up to the outstanding balance.
         </div>
       </div>
 
@@ -1488,7 +1488,7 @@ export const printLossPayeeNominationMandate = (agreement: Agreement, customer: 
         </tr>
         <tr>
           <td class="label">Designated Creditor:</td>
-          <td>SASSC / Phoenix Financial Services (Pty) Ltd</td>
+          <td>Lerato Community Financial Services (Pty) Ltd</td>
           <td class="label">Credit Agreement Ref:</td>
           <td><strong>${agreementNumber}</strong></td>
         </tr>
@@ -1502,14 +1502,14 @@ export const printLossPayeeNominationMandate = (agreement: Agreement, customer: 
 
       <div class="section-title">1. Legal Instruction to External Insurer</div>
       <div class="terms">
-        In terms of Section 106(4) of the National Credit Act, I hereby instruct and mandate the above-mentioned external insurer to register <strong>Phoenix Financial Services (Pty) Ltd</strong> (or its parent entity, <strong>SASSC Pty Ltd</strong>) as the <strong>Sole Primary Loss Payee</strong> and beneficiary on my credit insurance policy.
+        In terms of Section 106(4) of the National Credit Act, I hereby instruct and mandate the above-mentioned external insurer to register <strong>Lerato Community Financial Services (Pty) Ltd</strong> as the <strong>Sole Primary Loss Payee</strong> and beneficiary on my credit insurance policy.
         <br/><br/>
-        In the event of my death, permanent disability, temporary disability, or retrenchment during the currency of my indebtedness to SASSC/Phoenix, any benefits or claim payouts payable under this policy must first be paid directly to SASSC/Phoenix up to the full value of my remaining, outstanding debt liability.
+        In the event of my death, permanent disability, temporary disability, or retrenchment during the currency of my indebtedness to Lerato, any benefits or claim payouts payable under this policy must first be paid directly to Lerato up to the full value of my remaining, outstanding debt liability.
       </div>
 
       <div class="section-title">2. Underwriting Authority & Waiver</div>
       <div class="terms">
-        I hereby authorize SASSC/Phoenix to query, audit, verify and verify the status, premiums, and validity of my external insurance policy with my insurer at any stage. Should I fail to maintain this external policy, or should it lapse, I understand that SASSC/Phoenix reserves the right to register me on the internal statutory Credit Life Insurance program to protect the outstanding financial welfare loan.
+        I hereby authorize Lerato to query, audit, verify and verify the status, premiums, and validity of my external insurance policy with my insurer at any stage. Should I fail to maintain this external policy, or should it lapse, I understand that Lerato reserves the right to register me on the internal statutory Credit Life Insurance program to protect the outstanding financial welfare loan.
       </div>
 
       <div class="signatures">
@@ -1521,7 +1521,7 @@ export const printLossPayeeNominationMandate = (agreement: Agreement, customer: 
           </div>
           <div class="sig-box">
             <strong>FOR REGISTERED CREDIT PROVIDER</strong><br/>
-            Phoenix Financial Services (Pty) Ltd<br/>
+            Lerato Community Financial Services (Pty) Ltd<br/>
             Date: ${agreementDate}
           </div>
         </div>

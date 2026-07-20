@@ -1,7 +1,7 @@
 import { Sale, Agreement, Payment, CashMovement, CashDay, Product, WriteOff } from '../types';
 
 /**
- * FINANCIAL ENGINE FOR SASSC CREDIT MANAGEMENT SYSTEM
+ * FINANCIAL ENGINE FOR LERATO CREDIT MANAGEMENT SYSTEM
  * 
  * This module acts as the single source of truth for all financial calculations,
  * metric aggregates, cash ledger balances, portfolio indicators, and profit margins.

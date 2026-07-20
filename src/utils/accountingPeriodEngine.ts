@@ -10,13 +10,13 @@ import {
 } from './financialEngine';
 
 /**
- * ACCOUNTING PERIOD ENGINE FOR SASSC CREDIT MANAGEMENT SYSTEM
+ * ACCOUNTING PERIOD ENGINE FOR LERATO CREDIT MANAGEMENT SYSTEM
  * 
  * This engine governs financial periods, monthly closures, and strict audit ledgering.
  * It coordinates with the primary Financial Engine to compute and permanently frozen
  * historical snapshots of business health, assets, and Profit & Loss metrics.
  * 
- * CORE PRINCIPLES & LAWS OF BUSINESS IN SASSC:
+ * CORE PRINCIPLES & LAWS OF BUSINESS IN LERATO:
  * 1. Read-Only Closed Periods: Once closed, historical values are frozen and immune to dynamic ledger changes.
  * 2. Opening Balance Rollovers: Only Cash, Stock at Cost, and Outstanding Principal roll over.
  * 3. Profit Rules: Principal is never profit. Interest/service fees are profit on accrual. Retail profit is gross margin.

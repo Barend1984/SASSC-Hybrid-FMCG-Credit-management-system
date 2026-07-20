@@ -137,13 +137,13 @@ export default function DocumentPreviewModal({
         <div className="bg-white text-slate-900 p-6 sm:p-8 rounded-xl shadow-inner max-w-lg mx-auto font-sans leading-relaxed text-xs border border-slate-200">
           <div className="text-center border-b-2 border-slate-900 pb-4 mb-4">
             <h4 className="text-base font-black uppercase tracking-wider text-slate-950">Acknowledgement of Debt</h4>
-            <div className="text-[10px] text-slate-600 font-bold uppercase mt-1">South African Social Services Company (SASSC)</div>
+            <div className="text-[10px] text-slate-600 font-bold uppercase mt-1">Lerato Community Financial Services</div>
           </div>
 
           <div className="space-y-4">
             <p>
               I, the undersigned, <strong>{customerName}</strong>, with South African Identity Number <strong>{idNum}</strong>,
-              hereby unconditionally acknowledge that I am truly and lawfully indebted to <strong>SASSC</strong> in the total sum of
+              hereby unconditionally acknowledge that I am truly and lawfully indebted to <strong>Lerato (Pty) Ltd</strong> in the total sum of
               {' '}<strong className="text-sm font-bold text-slate-950">{formatCurrency(totalRepay)}</strong>.
             </p>
 
@@ -187,10 +187,10 @@ export default function DocumentPreviewModal({
               <div className="space-y-4">
                 <div className="text-center">
                   <div className="flex flex-col items-center justify-center">
-                    <span className="font-serif italic text-base text-slate-700 block border-b border-slate-300 pb-1 font-bold">SASSC Financials</span>
+                    <span className="font-serif italic text-base text-slate-700 block border-b border-slate-300 pb-1 font-bold">Lerato Financials</span>
                     <span className="text-[8px] text-slate-400 font-mono mt-0.5">Authorised Signatory</span>
                   </div>
-                  <div className="mt-1 font-semibold text-slate-800">For SASSC Representative</div>
+                  <div className="mt-1 font-semibold text-slate-800">For Lerato Representative</div>
                 </div>
                 <div>
                   <div className="border-b border-slate-300 text-center font-medium pb-0.5">{agreementDate}</div>
@@ -213,7 +213,7 @@ export default function DocumentPreviewModal({
               <span className="text-[10px] text-slate-500 font-mono">{agreementNumber}</span>
             </div>
             <div className="text-right">
-              <div className="text-sm font-bold text-slate-800">SASSC Credit Ltd</div>
+              <div className="text-sm font-bold text-slate-800">Lerato Community Financial Services</div>
               <div className="text-[10px] text-slate-500">VAT Reg: 4830192842</div>
             </div>
           </div>
