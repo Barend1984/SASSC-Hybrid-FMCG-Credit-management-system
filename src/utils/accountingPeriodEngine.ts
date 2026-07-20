@@ -6,7 +6,11 @@ import {
   calculateOutstandingPrincipal,
   calculateOutstandingInterest,
   calculateExpenseLedger,
-  calculateCustomerPayments
+  calculateCustomerPayments,
+  toCents,
+  fromCents,
+  formatZAR,
+  calculateCompanyFinancialState
 } from './financialEngine';
 
 /**
@@ -94,15 +98,7 @@ export function getPreviousAccountingPeriod(
 
 /**
  * Pure function to calculate P&L (Profit and Loss) metrics for a specific date range.
- * 
- * @param sales All retail and credit sales.
- * @param stock All active inventory/product lists for COGS lookups.
- * @param agreements All credit agreements for service fee/interest earned computations.
- * @param payments Repayments processed (not counted directly as profit, but used for audits).
- * @param cashMovements Expense ledgers and manual cash flows.
- * @param writeOffs Written off items to register as stock losses.
- * @param startDate Start date boundary.
- * @param endDate End date boundary.
+ * All computations use integer cents internally.
  */
 export function calculatePeriodProfit(
   sales: Sale[],
@@ -128,53 +124,63 @@ export function calculatePeriodProfit(
 
   // 1. Retail Profit (Gross Margin on Retail and Credit Goods)
   // Gross Margin = Sales Price - Cost of Goods Sold
-  let retailProfit = 0;
+  let retailProfitCents = 0;
   for (const sale of periodSales) {
     for (const item of sale.items) {
       const prod = stock.find(p => p.id === item.stockId);
-      const buyPrice = prod ? (prod.buyPrice || 0) : 0;
-      const margin = item.price - buyPrice;
-      retailProfit += margin * (item.qty || 0);
+      const buyPriceCents = prod ? toCents(prod.buyPrice) : 0;
+      const priceCents = toCents(item.price);
+      const marginCents = priceCents - buyPriceCents;
+      retailProfitCents += marginCents * (item.qty || 0);
     }
   }
 
   // 2. Interest Earned (accrual base: service fees created)
-  const interestEarned = periodAgreements.reduce((sum, a) => sum + (a.serviceFee || 0), 0);
+  const interestEarnedCents = periodAgreements.reduce((sum, a) => sum + toCents(a.serviceFee), 0);
 
   // 3. Fees Earned (accrual base: initiation fees created)
-  const feesEarned = periodAgreements.reduce((sum, a) => sum + (a.initiationFee || 0), 0);
+  const feesEarnedCents = periodAgreements.reduce((sum, a) => sum + toCents(a.initiationFee), 0);
 
   // 4. Other Income (manual cash inflows)
-  const otherIncome = periodMovements
+  const otherIncomeCents = periodMovements
     .filter(m => m.type === 'cash_in')
-    .reduce((sum, m) => sum + (m.amount || 0), 0);
+    .reduce((sum, m) => sum + toCents(m.amount), 0);
 
   // 5. Operational Expenses
-  const operationalExpenses = periodMovements
+  const operationalExpensesCents = periodMovements
     .filter(m => ['expense', 'cash_out', 'stock_purchase'].includes(m.type))
-    .reduce((sum, m) => sum + (m.amount || 0), 0);
+    .reduce((sum, m) => sum + toCents(m.amount), 0);
 
   // 6. Loss from written off stock
-  const stockLossVal = periodWriteOffs.reduce((sum, w) => sum + (w.lossValue || 0), 0);
+  const stockLossValCents = periodWriteOffs.reduce((sum, w) => sum + toCents(w.lossValue), 0);
 
-  const grossProfit = interestEarned + feesEarned + retailProfit + otherIncome;
+  const grossProfitCents = interestEarnedCents + feesEarnedCents + retailProfitCents + otherIncomeCents;
   // Stock write-off losses directly reduce net profit margins
-  const netProfit = grossProfit - operationalExpenses - stockLossVal;
+  const netProfitCents = grossProfitCents - operationalExpensesCents - stockLossValCents;
 
   return {
-    interestEarned: Math.round(interestEarned * 100) / 100,
-    feesEarned: Math.round(feesEarned * 100) / 100,
-    retailProfit: Math.round(retailProfit * 100) / 100,
-    otherIncome: Math.round(otherIncome * 100) / 100,
-    operationalExpenses: Math.round(operationalExpenses * 100) / 100,
-    stockLossVal: Math.round(stockLossVal * 100) / 100,
-    grossProfit: Math.round(grossProfit * 100) / 100,
-    netProfit: Math.round(netProfit * 100) / 100
+    interestEarned: fromCents(interestEarnedCents),
+    interestEarnedCents,
+    feesEarned: fromCents(feesEarnedCents),
+    feesEarnedCents,
+    retailProfit: fromCents(retailProfitCents),
+    retailProfitCents,
+    otherIncome: fromCents(otherIncomeCents),
+    otherIncomeCents,
+    operationalExpenses: fromCents(operationalExpensesCents),
+    operationalExpensesCents,
+    stockLossVal: fromCents(stockLossValCents),
+    stockLossValCents,
+    grossProfit: fromCents(grossProfitCents),
+    grossProfitCents,
+    netProfit: fromCents(netProfitCents),
+    netProfitCents
   };
 }
 
 /**
  * Pure function to calculate capital reconciliation and structural assets.
+ * All computations use integer cents internally.
  */
 export function calculatePeriodCapital(
   sales: Sale[],
@@ -201,26 +207,27 @@ export function calculatePeriodCapital(
     return d >= startDate && d <= endDate;
   });
 
-  // Calculate Sub-components using the financial engine logic
-  const cashOnHand = calculateCashOnHand(rangeSales, rangePayments, rangeMovements, rangeCashDays);
-  const cashInBank = calculateBankBalance(rangeSales, rangePayments, rangeMovements);
-  const totalCash = cashOnHand + cashInBank;
-  
-  const stockCost = calculateInventoryCost(stock); // Always current stock count
-  const outstandingPrincipal = calculateOutstandingPrincipal(rangeAgreements);
-  const activeExpenseLedger = calculateExpenseLedger(rangeMovements);
-
-  // CAPITAL UNDER MANAGEMENT RULE:
-  // Capital = Cash + Inventory at Cost + Outstanding Principal + Operational Expense Ledger
-  // Never include: Interest, Profit, Fees, VAT, Markup.
-  const capitalUnderManagement = totalCash + stockCost + outstandingPrincipal + activeExpenseLedger;
+  const state = calculateCompanyFinancialState(
+    rangeSales,
+    rangePayments,
+    rangeMovements,
+    rangeCashDays,
+    rangeAgreements,
+    stock,
+    rangeWriteOffs
+  );
 
   return {
-    cash: Math.round(totalCash * 100) / 100,
-    stockCost: Math.round(stockCost * 100) / 100,
-    outstandingPrincipal: Math.round(outstandingPrincipal * 100) / 100,
-    operationalExpenses: Math.round(activeExpenseLedger * 100) / 100,
-    capitalUnderManagement: Math.round(capitalUnderManagement * 100) / 100
+    cash: state.grossCashOnHand,
+    cashCents: state.grossCashOnHandCents,
+    stockCost: state.stockCost,
+    stockCostCents: state.stockCostCents,
+    outstandingPrincipal: state.outstandingPrincipal,
+    outstandingPrincipalCents: state.outstandingPrincipalCents,
+    operationalExpenses: state.cashPaidOut,
+    operationalExpensesCents: state.cashPaidOutCents,
+    capitalUnderManagement: state.companyCurrentFinancialState,
+    capitalUnderManagementCents: state.companyCurrentFinancialStateCents
   };
 }
 
@@ -277,19 +284,19 @@ export function openAccountingPeriod(
 
   const prevPeriod = getPreviousAccountingPeriod(periods, tempCurrent);
 
-  let cashOpening = 0;
-  let stockOpening = 0;
-  let outstandingPrincipalOpening = 0;
+  let cashOpeningCents = 0;
+  let stockOpeningCents = 0;
+  let outstandingPrincipalOpeningCents = 0;
 
   if (prevPeriod) {
     // Carry forward ONLY: Cash, Stock at Cost, Outstanding Loan Principal
-    cashOpening = prevPeriod.cashClosing;
-    stockOpening = prevPeriod.stockClosing;
-    outstandingPrincipalOpening = prevPeriod.outstandingPrincipalClosing;
+    cashOpeningCents = toCents(prevPeriod.cashClosing);
+    stockOpeningCents = toCents(prevPeriod.stockClosing);
+    outstandingPrincipalOpeningCents = toCents(prevPeriod.outstandingPrincipalClosing);
   }
 
   // Capital Opening = Cash + Stock + Outstanding Principal
-  const capitalOpeningBalance = cashOpening + stockOpening + outstandingPrincipalOpening;
+  const capitalOpeningBalanceCents = cashOpeningCents + stockOpeningCents + outstandingPrincipalOpeningCents;
 
   const now = new Date();
   const periodId = 'ap_' + Math.random().toString(36).substring(2, 11);
@@ -300,13 +307,13 @@ export function openAccountingPeriod(
     startDate,
     endDate,
     status: 'OPEN',
-    capitalOpeningBalance,
+    capitalOpeningBalance: fromCents(capitalOpeningBalanceCents),
     capitalClosingBalance: 0,
-    cashOpening,
+    cashOpening: fromCents(cashOpeningCents),
     cashClosing: 0,
-    stockOpening,
+    stockOpening: fromCents(stockOpeningCents),
     stockClosing: 0,
-    outstandingPrincipalOpening,
+    outstandingPrincipalOpening: fromCents(outstandingPrincipalOpeningCents),
     outstandingPrincipalClosing: 0,
     interestEarned: 0,
     feesEarned: 0,

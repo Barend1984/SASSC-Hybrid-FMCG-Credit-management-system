@@ -367,10 +367,46 @@ export const seedSampleData = () => {
 
   const defaultAdmin: User = {
     id: 'u1',
-    fullName: 'Main Admin',
+    fullName: 'Claudine Pike du Plessis',
     username: 'admin',
     passwordHash: hashPassword('admin123'),
     role: 'main_admin',
+    permissions: {},
+    isActive: true,
+    created: new Date().toISOString(),
+    lastLoginAt: ''
+  };
+
+  const cashier1: User = {
+    id: 'usr-cashier-1',
+    fullName: 'Sipho Ndlovu',
+    username: 'sipho_cashier',
+    passwordHash: hashPassword('1234'),
+    role: 'cashier',
+    permissions: {},
+    isActive: true,
+    created: new Date().toISOString(),
+    lastLoginAt: ''
+  };
+
+  const cashier2: User = {
+    id: 'usr-cashier-2',
+    fullName: 'Lerato Operator',
+    username: 'lerato_operator',
+    passwordHash: hashPassword('1234'),
+    role: 'cashier',
+    permissions: {},
+    isActive: true,
+    created: new Date().toISOString(),
+    lastLoginAt: ''
+  };
+
+  const manager1: User = {
+    id: 'usr-manager-1',
+    fullName: 'Claudine du Plessis',
+    username: 'claudine_mgr',
+    passwordHash: hashPassword('1234'),
+    role: 'manager',
     permissions: {},
     isActive: true,
     created: new Date().toISOString(),
@@ -388,7 +424,7 @@ export const seedSampleData = () => {
 
   saveDBList('customers', customers);
   saveDBList('stock', stock);
-  saveDBList('users', [defaultAdmin]);
+  saveDBList('users', [defaultAdmin, cashier1, cashier2, manager1]);
   saveDBObj('settings', settings);
   localStorage.setItem('sassc2_seeded', 'true');
 };

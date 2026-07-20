@@ -179,6 +179,15 @@ export interface CashMovement {
   createdBy: string;
   createdByName: string;
   createdAt: string;
+  status?: 'pending_approval' | 'approved' | 'rejected';
+  cashierApprovedBy?: string;
+  cashierApprovedByName?: string;
+  cashierSignature?: string;
+  cashierSignatureType?: 'drawn' | 'typed';
+  supervisorApprovedBy?: string;
+  supervisorApprovedByName?: string;
+  supervisorCodeUsed?: string;
+  approvedAt?: string;
 }
 
 export interface RecipeIngredient {

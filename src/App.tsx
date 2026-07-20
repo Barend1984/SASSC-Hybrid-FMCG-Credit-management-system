@@ -7,6 +7,7 @@ import {
 } from './utils/database';
 
 // Views
+import LoginView from './components/LoginView';
 import DashboardView from './components/DashboardView';
 import PosCashView from './components/PosCashView';
 import CreditWizardView from './components/CreditWizardView';
@@ -40,12 +41,26 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Authentication & Session
-  const [currentUser, setCurrentUser] = useState<any>({
-    id: 'usr-admin-1',
-    fullName: 'Claudine Pike du Plessis',
-    username: 'admin',
-    role: 'main_admin'
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    const saved = sessionStorage.getItem('sassc_current_user');
+    return saved ? JSON.parse(saved) : null;
   });
+
+  const handleLoginSuccess = (user: User) => {
+    setCurrentUser(user);
+    sessionStorage.setItem('sassc_current_user', JSON.stringify(user));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    sessionStorage.removeItem('sassc_current_user');
+    setActiveTab('dashboard'); // reset tab on logout
+  };
+
+  const getUserInitials = (name: string) => {
+    if (!name) return 'U';
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
 
   // Daily cash register
   const [activeDay, setActiveDay] = useState<CashDay | null>(null);
@@ -178,6 +193,10 @@ export default function App() {
     { id: 'settings', label: 'System Settings', icon: SlidersHorizontal },
   ];
 
+  if (!currentUser) {
+    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       
@@ -232,29 +251,40 @@ export default function App() {
 
             {/* Sidebar nav lists */}
             <nav className="flex-1 overflow-y-auto px-3 space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveTab(item.id);
-                      setSidebarOpen(false);
-                    }}
-                    className={`
-                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold transition
-                      ${isActive 
-                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10' 
-                        : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/20'
-                      }
-                    `}
-                  >
-                    <Icon className="h-4 w-4 flex-shrink-0" />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
+              {navItems
+                .filter((item) => {
+                  const role = currentUser?.role;
+                  if (role === 'cashier') {
+                    return ['dashboard', 'pos', 'customers', 'payments', 'cash_control', 'calculator'].includes(item.id);
+                  }
+                  if (role === 'manager') {
+                    return item.id !== 'settings';
+                  }
+                  return true;
+                })
+                .map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setSidebarOpen(false);
+                      }}
+                      className={`
+                        w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold transition
+                        ${isActive 
+                          ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10' 
+                          : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/20'
+                        }
+                      `}
+                    >
+                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
             </nav>
           </div>
 
@@ -273,16 +303,25 @@ export default function App() {
           </div>
 
           {/* Connected User details footer */}
-          <div className="p-4 border-t border-slate-850 bg-slate-950/40 space-y-2">
+          <div className="p-4 border-t border-slate-850 bg-slate-950/40 space-y-3">
             <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-amber-500">
-                BP
+              <div className="h-8 w-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-amber-500 shrink-0">
+                {getUserInitials(currentUser?.fullName || '')}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <span className="text-xs font-bold text-slate-200 block truncate">{currentUser?.fullName}</span>
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Administrator</span>
+                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">
+                  {currentUser?.role === 'main_admin' ? 'Main Admin' :
+                   currentUser?.role === 'manager' ? 'Manager' : 'Cashier Operator'}
+                </span>
               </div>
             </div>
+            <button
+              onClick={handleLogout}
+              className="w-full py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded text-slate-400 hover:text-rose-450 text-[10px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <UserX size={12} /> Log Out Session
+            </button>
           </div>
 
         </aside>
@@ -301,6 +340,7 @@ export default function App() {
                 customers={customers}
                 onNavigate={(t) => setActiveTab(t)}
                 activeDay={activeDay}
+                currentUser={currentUser}
               />
             )}
 

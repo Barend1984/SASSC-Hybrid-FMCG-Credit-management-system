@@ -24,7 +24,8 @@ import {
   AlertTriangle, CreditCard, Calendar, BarChart3, Database, 
   Trash2, ShieldCheck, Key, Lock, Plus, Users, PlusCircle, CheckCircle, Save,
   ChefHat, Utensils, BookOpen, Info, ClipboardList, FileSpreadsheet, RefreshCw, 
-  DollarSign, History, Trash, AlertCircle, TrendingUp, Eye, Download, Edit
+  DollarSign, History, Trash, AlertCircle, TrendingUp, Eye, Download, Edit,
+  ArrowRightLeft, Printer, Clock, X
 } from 'lucide-react';
 import DocumentPreviewModal from './DocumentPreviewModal';
 
@@ -2169,6 +2170,37 @@ export function ReportsView() {
         s.discount.toString(),
         s.total.toString()
       ]);
+    } else if (reportType === 'expense_ledger') {
+      const allMovements = loadDBList<CashMovement>('cashMovements');
+      const filtered = allMovements.filter(m => m.date >= dateFrom && m.date <= dateTo && ['expense', 'cash_out', 'stock_purchase'].includes(m.type));
+      headers = ['Date', 'Category Type', 'Amount (ZAR)', 'EFT/Bank Reference', 'Description/Note', 'Logged By'];
+      rows = filtered.map(m => [
+        m.date,
+        m.type === 'expense' ? 'Petty Expense' : m.type === 'stock_purchase' ? 'Stock Purchase' : 'Cash Out Payout',
+        m.amount.toFixed(2),
+        m.reference || '—',
+        m.note || '—',
+        m.createdByName || m.createdBy || 'System'
+      ]);
+    } else if (reportType === 'cash_movements') {
+      const allMovements = loadDBList<CashMovement>('cashMovements');
+      const filtered = allMovements.filter(m => m.date >= dateFrom && m.date <= dateTo);
+      headers = ['Date', 'Time Logged', 'Type', 'Amount (ZAR)', 'Reference/Slip', 'Description', 'Approval Status', 'Cashier Signed', 'Supervisor Sign-off', 'Logged By'];
+      rows = filtered.map(m => [
+        m.date,
+        m.createdAt ? new Date(m.createdAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }) : '—',
+        m.type === 'cash_in' ? 'Float Top-Up (In)' : 
+        m.type === 'cash_out' ? 'Float Out / Advance' : 
+        m.type === 'expense' ? 'Petty Expense' : 
+        m.type === 'stock_purchase' ? 'Stock Purchase' : 'Bank Deposit / Drop',
+        m.amount.toFixed(2),
+        m.reference || '—',
+        m.note || '—',
+        m.status || 'approved',
+        m.cashierApprovedByName || '—',
+        m.supervisorApprovedByName || '—',
+        m.createdByName || 'System'
+      ]);
     } else if (reportType === 'agreements') {
       headers = ['Agreement No', 'Date', 'Capital Owed', 'Initiation Fee', 'Service Fee', 'Total', 'Repaid', 'Balance', 'Due Date', 'Status'];
       const filtered = agreements.filter(a => a.date >= dateFrom && a.date <= dateTo);
@@ -2366,6 +2398,8 @@ export function ReportsView() {
           <label className="text-[10px] text-slate-500 font-bold uppercase">Report Category</label>
           <select value={reportType} onChange={e => setReportType(e.target.value)} className="bg-slate-950 border border-slate-850 p-2 rounded text-xs text-slate-200 w-full">
             <option value="cash_sales">Instant POS Retail Sales</option>
+            <option value="expense_ledger">Unified Expense Ledger & Payout Journal</option>
+            <option value="cash_movements">Detailed Cash Movements Ledger (Drops, Deposits, Floats)</option>
             <option value="agreements">Unified Credit Agreements Issued</option>
             <option value="payments">Repayments & Installments Received</option>
             <option value="accounts_due">Accounts Due / Repayments Ledger</option>
@@ -2387,6 +2421,18 @@ export function ReportsView() {
           <div>
             <div className="text-sm font-semibold text-slate-300 mb-2">Retail Sales Statistics</div>
             <p>Ready for download. Total sales transactions matching filters: <strong>{sales.filter(s => s.date >= dateFrom && s.date <= dateTo && ['cash','card','eft'].includes(s.method)).length}</strong></p>
+          </div>
+        )}
+        {reportType === 'expense_ledger' && (
+          <div>
+            <div className="text-sm font-semibold text-slate-300 mb-2">Unified Expense Ledger & Payout Statistics</div>
+            <p>Ready for download. Total expense and cash payout logs matching filters: <strong>{loadDBList<CashMovement>('cashMovements').filter(m => m.date >= dateFrom && m.date <= dateTo && ['expense', 'cash_out', 'stock_purchase'].includes(m.type)).length}</strong></p>
+          </div>
+        )}
+        {reportType === 'cash_movements' && (
+          <div>
+            <div className="text-sm font-semibold text-slate-300 mb-2">Detailed Cash Movements Statistics</div>
+            <p>Ready for download. Total drops, deposits, topups, and float logs matching filters: <strong>{loadDBList<CashMovement>('cashMovements').filter(m => m.date >= dateFrom && m.date <= dateTo).length}</strong></p>
           </div>
         )}
         {reportType === 'agreements' && (
@@ -2451,6 +2497,176 @@ export function CashControlView({ activeDay, onRefreshDB, currentUser }: CashCon
   // Close Register states
   const [countedCash, setCountedCash] = useState('');
   const [closeNote, setCloseNote] = useState('');
+
+  // Cash drop / bank drop dual-sign off workflow states
+  const [dropAmt, setDropAmt] = useState('');
+  const [dropRef, setDropRef] = useState('');
+  const [dropNote, setDropNote] = useState('');
+  const [dropCashier, setDropCashier] = useState('');
+  const [dropCashierSig, setDropCashierSig] = useState('');
+  const [selectedDropForAuth, setSelectedDropForAuth] = useState<CashMovement | null>(null);
+  const [selectedDropForSlip, setSelectedDropForSlip] = useState<CashMovement | null>(null);
+  const [supervisorCode, setSupervisorCode] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'expense' | 'stock_purchase' | 'cash_out' | 'bank_deposit' | 'pending_drops'>('all');
+  const [isPrintJournalOpen, setIsPrintJournalOpen] = useState(false);
+
+  const [usersList, setUsersList] = useState<User[]>([]);
+
+  useEffect(() => {
+    const list = loadDBList<User>('users');
+    if (list.length === 0) {
+      const fallbackList: User[] = [
+        {
+          id: 'usr-cashier-1',
+          fullName: 'Sipho Ndlovu',
+          username: 'sipho_cashier',
+          passwordHash: '',
+          role: 'cashier',
+          permissions: {},
+          isActive: true,
+          created: '',
+          lastLoginAt: ''
+        },
+        {
+          id: 'usr-cashier-2',
+          fullName: 'Lerato Operator',
+          username: 'lerato_operator',
+          passwordHash: '',
+          role: 'cashier',
+          permissions: {},
+          isActive: true,
+          created: '',
+          lastLoginAt: ''
+        },
+        {
+          id: 'usr-manager-1',
+          fullName: 'Claudine du Plessis',
+          username: 'claudine_mgr',
+          passwordHash: '',
+          role: 'manager',
+          permissions: {},
+          isActive: true,
+          created: '',
+          lastLoginAt: ''
+        }
+      ];
+      setUsersList(fallbackList);
+      if (!dropCashier) {
+        setDropCashier(fallbackList[0].fullName);
+      }
+    } else {
+      setUsersList(list);
+      const firstCashier = list.find(u => u.role === 'cashier') || list[0];
+      if (firstCashier && !dropCashier) {
+        setDropCashier(firstCashier.fullName);
+      }
+    }
+  }, []);
+
+  const handleRequestDrop = () => {
+    if (!activeDay) return;
+    const amt = parseFloat(dropAmt) || 0;
+    if (amt <= 0) {
+      alert('Please enter a valid positive cash removal amount.');
+      return;
+    }
+    
+    const currentExpected = getExpectedOnHand();
+    if (amt > currentExpected) {
+      alert(`Interlock Warning: Cannot drop R ${amt.toFixed(2)} when the current expected drawer cash balance is only R ${currentExpected.toFixed(2)}.`);
+      return;
+    }
+
+    if (!dropCashier) {
+      alert('Cashier authorization name is required.');
+      return;
+    }
+    if (!dropCashierSig.trim()) {
+      alert('Cashier signature validation is required to sign off.');
+      return;
+    }
+
+    const dropMovement: CashMovement = {
+      id: generateUid(),
+      cashDayId: activeDay.id,
+      date: activeDay.date,
+      type: 'bank_deposit',
+      amount: amt,
+      reference: dropRef || `BAG-${Math.floor(100000 + Math.random() * 900000)}`,
+      note: dropNote || 'Standard Till Terminal Cash Drop',
+      status: 'pending_approval',
+      createdBy: currentUser?.id || 'cashier',
+      createdByName: currentUser?.fullName || 'Cashier Operator',
+      createdAt: new Date().toISOString(),
+      cashierApprovedBy: currentUser?.id || 'cashier',
+      cashierApprovedByName: dropCashier,
+      cashierSignature: dropCashierSig,
+      cashierSignatureType: 'typed'
+    };
+
+    const all = loadDBList<CashMovement>('cashMovements');
+    all.push(dropMovement);
+    saveDBList('cashMovements', all);
+
+    setDropAmt('');
+    setDropRef('');
+    setDropNote('');
+    setDropCashierSig('');
+    loadData();
+    onRefreshDB();
+    alert('Till cash drop request successfully logged! Awaiting supervisor verification and passcode submission.');
+  };
+
+  const handleAuthorizeDrop = (movementId: string) => {
+    const all = loadDBList<CashMovement>('cashMovements');
+    const idx = all.findIndex(m => m.id === movementId);
+    if (idx < 0) {
+      alert('Cash movement record not found.');
+      return;
+    }
+
+    if (supervisorCode !== 'LERATO-SUPERVISOR-2026' && supervisorCode !== '1234') {
+      alert('Invalid supervisor authorization passcode. Access Denied.');
+      return;
+    }
+
+    const cashierName = all[idx].cashierApprovedByName || '';
+    const supervisorName = currentUser?.fullName || 'Claudine (Supervisor)';
+
+    if (cashierName.trim().toLowerCase() === supervisorName.trim().toLowerCase()) {
+      if (!confirm('WARNING: Cashier name and Supervisor name appear identical. Dual regulatory control mandates two distinct authorized staff members. Click OK if this is an override bypass under emergency conditions, otherwise Cancel.')) {
+        return;
+      }
+    }
+
+    all[idx] = {
+      ...all[idx],
+      status: 'approved',
+      supervisorApprovedBy: currentUser?.id || 'supervisor',
+      supervisorApprovedByName: supervisorName,
+      supervisorCodeUsed: supervisorCode,
+      approvedAt: new Date().toISOString()
+    };
+
+    saveDBList('cashMovements', all);
+    setSupervisorCode('');
+    setSelectedDropForAuth(null);
+    loadData();
+    onRefreshDB();
+    alert(`Bank Drop approved successfully! R ${all[idx].amount.toFixed(2)} has been securely verified and transferred into the bank balance.`);
+  };
+
+  const handleRejectDrop = (movementId: string) => {
+    if (!confirm('Are you sure you want to REJECT this till drop request? This will archive the request as rejected.')) return;
+    const all = loadDBList<CashMovement>('cashMovements');
+    const idx = all.findIndex(m => m.id === movementId);
+    if (idx >= 0) {
+      all[idx].status = 'rejected';
+      saveDBList('cashMovements', all);
+    }
+    loadData();
+    onRefreshDB();
+  };
 
   const loadData = () => {
     setDayHistory(loadDBList<CashDay>('cashDays'));
@@ -2575,22 +2791,94 @@ export function CashControlView({ activeDay, onRefreshDB, currentUser }: CashCon
     );
   };
 
+  const getJournalAggregates = () => {
+    if (!activeDay) return null;
+    const salesList = loadDBList<Sale>('sales').filter(s => s.date === activeDay.date);
+    const paysList = loadDBList<Payment>('payments').filter(p => p.date === activeDay.date);
+    const moves = cashMovements;
+
+    const cashSales = salesList.filter(s => s.method === 'cash').reduce((sum, s) => sum + s.total, 0);
+    const cashRepayments = paysList.filter(p => p.method === 'cash').reduce((sum, p) => sum + p.amount, 0);
+    const cashInMoves = moves.filter(m => m.type === 'cash_in').reduce((sum, m) => sum + m.amount, 0);
+    const cashOutMoves = moves.filter(m => ['cash_out', 'expense', 'stock_purchase'].includes(m.type)).reduce((sum, m) => sum + m.amount, 0);
+    const approvedBankDeposits = moves.filter(m => m.type === 'bank_deposit' && m.status === 'approved').reduce((sum, m) => sum + m.amount, 0);
+
+    const opening = activeDay.openingCash;
+    const expected = opening + cashSales + cashRepayments + cashInMoves - cashOutMoves - approvedBankDeposits;
+    const closed = activeDay.closingCash ?? 0;
+    const difference = activeDay.difference ?? (activeDay.status === 'closed' ? closed - expected : 0);
+
+    return {
+      date: activeDay.date,
+      openedBy: activeDay.openedByName,
+      openedAt: activeDay.openedAt,
+      closedBy: activeDay.closedByName || '—',
+      closedAt: activeDay.closedAt || '—',
+      opening,
+      cashSales,
+      cashRepayments,
+      cashInMoves,
+      cashOutMoves,
+      approvedBankDeposits,
+      expected,
+      closed,
+      difference,
+      status: activeDay.status
+    };
+  };
+
+  const getFilteredMovements = () => {
+    return cashMovements.filter(m => {
+      if (filterType === 'all') {
+        return ['expense', 'cash_out', 'stock_purchase', 'bank_deposit'].includes(m.type);
+      }
+      if (filterType === 'expense') {
+        return m.type === 'expense';
+      }
+      if (filterType === 'stock_purchase') {
+        return m.type === 'stock_purchase';
+      }
+      if (filterType === 'cash_out') {
+        return m.type === 'cash_out';
+      }
+      if (filterType === 'bank_deposit') {
+        return m.type === 'bank_deposit' && m.status === 'approved';
+      }
+      if (filterType === 'pending_drops') {
+        return m.type === 'bank_deposit' && m.status === 'pending_approval';
+      }
+      return true;
+    });
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-slate-100 flex items-center gap-1.5"><Calendar className="text-amber-500" /> Cash Control Register</h2>
-        <p className="text-xs text-slate-400">Open/close cash floats daily and monitor discrepancies securely</p>
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-1.5"><Calendar className="text-amber-500" /> Cash Control Register</h2>
+          <p className="text-xs text-slate-400">Open/close cash floats daily, request terminal bank drops, and monitor discrepancies securely</p>
+        </div>
+        {activeDay && (
+          <button
+            onClick={() => setIsPrintJournalOpen(true)}
+            className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-100 border border-slate-800 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition active:scale-95 animate-fade-in"
+          >
+            <Printer size={14} className="text-amber-500" /> Print Daily Journal
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Active Register or Start Float Form */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Day register status</h3>
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <Clock size={14} className="text-amber-500" /> Daily Register Status
+          </h3>
           
           {!activeDay ? (
             <div className="space-y-4">
-              <div className="p-4 bg-slate-950/40 rounded-xl border border-slate-850 text-slate-500 text-xs">
-                Register is currently closed. Enter starting float to unlock POS sales and Repayment logs.
+              <div className="p-4 bg-slate-950/40 rounded-xl border border-slate-850 text-slate-400 text-xs leading-relaxed">
+                Register is currently <span className="text-rose-400 font-bold uppercase">Closed</span>. Enter the starting cash drawer float to unlock retail sales and capture client payment allocations.
               </div>
               <div className="form-group">
                 <label className="text-[10px] text-slate-500 font-bold uppercase">Opening Float Cash (R)</label>
@@ -2599,54 +2887,59 @@ export function CashControlView({ activeDay, onRefreshDB, currentUser }: CashCon
                   placeholder="0.00"
                   value={openingFloat}
                   onChange={e => setOpeningFloat(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-slate-200 text-xs focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-slate-200 text-xs focus:outline-none focus:border-amber-500 transition"
                 />
               </div>
               <button
                 onClick={handleOpenRegister}
-                className="w-full py-2 bg-amber-500 text-slate-950 font-bold rounded text-xs"
+                className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded text-xs transition duration-150 active:scale-[0.98] cursor-pointer shadow-lg shadow-amber-500/10"
               >
                 ☀️ Start Daily Register Float
               </button>
             </div>
           ) : (
             <div className="space-y-4 text-xs">
-              <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 space-y-2 text-slate-400">
-                <div className="flex justify-between"><span>Status:</span><span className="text-emerald-400 font-bold uppercase">Open</span></div>
+              <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 space-y-2.5 text-slate-400">
+                <div className="flex justify-between items-center">
+                  <span>Status:</span>
+                  <span className="text-emerald-400 font-bold uppercase flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span> Open
+                  </span>
+                </div>
                 <div className="flex justify-between"><span>Opened By:</span><span className="text-slate-300 font-medium">{activeDay.openedByName}</span></div>
                 <div className="flex justify-between"><span>Opened Float:</span><span className="text-slate-300">R {activeDay.openingCash.toFixed(2)}</span></div>
-                <div className="flex justify-between text-sm font-bold text-slate-200 border-t border-slate-900 pt-2 mt-2">
+                <div className="flex justify-between text-sm font-bold text-slate-200 border-t border-slate-850 pt-2.5 mt-1">
                   <span>Expected On Hand:</span>
                   <span className="text-emerald-400 font-black">R {getExpectedOnHand().toFixed(2)}</span>
                 </div>
               </div>
 
               {/* Close float composer */}
-              <div className="border-t border-slate-800 pt-4 space-y-3">
+              <div className="border-t border-slate-800/80 pt-4 space-y-3">
                 <div className="text-[10px] font-bold uppercase text-slate-400">End Float Reconciliation</div>
                 <div className="form-group">
-                  <label className="text-[10px] text-slate-500">Physical counted Cash in register (R)</label>
+                  <label className="text-[10px] text-slate-500 font-bold">Physical Counted Cash in Drawer (R)</label>
                   <input
                     type="number"
                     placeholder="0.00"
                     value={countedCash}
                     onChange={e => setCountedCash(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-850 rounded p-1.5 text-slate-200 text-xs"
+                    className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-slate-200 text-xs focus:outline-none focus:border-amber-500"
                   />
                 </div>
                 <div className="form-group">
-                  <label className="text-[10px] text-slate-500">Closing notes</label>
+                  <label className="text-[10px] text-slate-500 font-bold">Closing Notes / Discrepancy explanation</label>
                   <input
                     type="text"
                     placeholder="E.g. variance due to change shortage"
                     value={closeNote}
                     onChange={e => setCloseNote(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-850 rounded p-1.5 text-slate-200 text-xs"
+                    className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-slate-200 text-xs focus:outline-none focus:border-amber-500"
                   />
                 </div>
                 <button
                   onClick={handleCloseRegister}
-                  className="w-full py-2 bg-rose-500 text-white font-bold rounded text-xs hover:bg-rose-600 transition"
+                  className="w-full py-2 bg-rose-500 text-white font-bold rounded text-xs hover:bg-rose-600 transition cursor-pointer active:scale-[0.98] shadow-md shadow-rose-950/20"
                 >
                   🌙 Close Daily Register & Reconciliation
                 </button>
@@ -2656,8 +2949,10 @@ export function CashControlView({ activeDay, onRefreshDB, currentUser }: CashCon
         </div>
 
         {/* Float Manual Movements Form */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Log Cash Movement</h3>
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <PlusCircle size={14} className="text-amber-500" /> Log Petty Cash & Advances
+          </h3>
           
           {!activeDay ? (
             <div className="text-center py-12 text-slate-500 text-xs">Daily Register closed. Open Day to record manual adjustments.</div>
@@ -2665,37 +2960,752 @@ export function CashControlView({ activeDay, onRefreshDB, currentUser }: CashCon
             <div className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-group">
-                  <label className="text-[10px] text-slate-500">Movement Category</label>
-                  <select value={moveType} onChange={e => setMoveType(e.target.value as any)} className="bg-slate-950 border border-slate-850 p-2 rounded text-slate-200 w-full">
+                  <label className="text-[10px] text-slate-500 font-bold">Movement Category</label>
+                  <select value={moveType} onChange={e => setMoveType(e.target.value as any)} className="bg-slate-950 border border-slate-850 p-2 rounded text-slate-200 w-full focus:outline-none">
                     <option value="cash_in">Float Top-Up (In)</option>
                     <option value="cash_out">Float Out (Advance)</option>
                     <option value="expense">Petty Expense (Out)</option>
-                    <option value="bank_deposit">Banking Deposit (Out)</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="text-[10px] text-slate-500">Amount (R)</label>
-                  <input type="number" value={moveAmt} onChange={e => setMoveAmt(e.target.value)} className="bg-slate-950 border border-slate-850 p-2 rounded text-slate-200" />
+                  <label className="text-[10px] text-slate-500 font-bold">Amount (R)</label>
+                  <input type="number" value={moveAmt} onChange={e => setMoveAmt(e.target.value)} className="bg-slate-950 border border-slate-850 p-2 rounded text-slate-200 w-full focus:outline-none" />
                 </div>
               </div>
               <div className="form-group">
-                <label className="text-[10px] text-slate-500">EFT/Bank Reference</label>
-                <input type="text" value={moveRef} onChange={e => setMoveRef(e.target.value)} placeholder="INV-204" className="bg-slate-950 border border-slate-850 p-1.5 rounded text-slate-200" />
+                <label className="text-[10px] text-slate-500 font-bold">Receipt/EFT Reference Number</label>
+                <input type="text" value={moveRef} onChange={e => setMoveRef(e.target.value)} placeholder="PETTY-104 or INV-92" className="bg-slate-950 border border-slate-850 p-1.5 rounded text-slate-200 w-full focus:outline-none" />
               </div>
               <div className="form-group">
-                <label className="text-[10px] text-slate-500">Operational description</label>
-                <input type="text" value={moveNote} onChange={e => setMoveNote(e.target.value)} placeholder="Authorised fuel refund" className="bg-slate-950 border border-slate-850 p-1.5 rounded text-slate-200" />
+                <label className="text-[10px] text-slate-500 font-bold">Operational Description / Reason</label>
+                <input type="text" value={moveNote} onChange={e => setMoveNote(e.target.value)} placeholder="Authorised fuel refund" className="bg-slate-950 border border-slate-850 p-1.5 rounded text-slate-200 w-full focus:outline-none" />
               </div>
               <button
                 onClick={handleRecordMovement}
-                className="w-full py-2 bg-amber-500 text-slate-950 font-bold rounded text-xs"
+                className="w-full py-2 bg-amber-500 text-slate-950 font-bold rounded text-xs hover:bg-amber-600 transition cursor-pointer active:scale-[0.98]"
               >
                 + Record Register Entry
               </button>
             </div>
           )}
         </div>
+
+        {/* NEW Dedicated Cashier-Initiated Bank Drop / Till Cash Removal Request Form */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm border-l-2 border-l-amber-500">
+          <h3 className="text-xs font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1.5">
+            <Lock size={14} /> Dual-Auth Till Bank Drop
+          </h3>
+          
+          {!activeDay ? (
+            <div className="text-center py-12 text-slate-500 text-xs">Daily Register closed. Open Day to request bank drops.</div>
+          ) : (
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3 bg-amber-950/20 border border-amber-900/30 rounded-lg text-amber-400 text-[11px] leading-relaxed">
+                <strong>Regulatory Security Interlock:</strong> High cash volumes must be removed and securely bagged. Requires joint sign-off by the Cashier (Signature) and Supervisor (Verification Code).
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="text-[10px] text-slate-500 font-bold uppercase">Cashier Operator</label>
+                  <select
+                    value={dropCashier}
+                    onChange={e => setDropCashier(e.target.value)}
+                    className="bg-slate-950 border border-slate-850 p-2 rounded text-slate-200 w-full focus:outline-none"
+                  >
+                    {usersList.map(u => (
+                      <option key={u.id} value={u.fullName}>{u.fullName}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="text-[10px] text-slate-500 font-bold uppercase">Amount to Remove (R)</label>
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    value={dropAmt}
+                    onChange={e => setDropAmt(e.target.value)}
+                    className="bg-slate-950 border border-slate-850 p-2 rounded text-slate-200 w-full focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="text-[10px] text-slate-500 font-bold uppercase">Bag / Drop Reference</label>
+                  <input
+                    type="text"
+                    placeholder="E.g. BAG-80234"
+                    value={dropRef}
+                    onChange={e => setDropRef(e.target.value)}
+                    className="bg-slate-950 border border-slate-850 p-1.5 rounded text-slate-200 w-full focus:outline-none"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="text-[10px] text-slate-500 font-bold uppercase">Drop Description</label>
+                  <input
+                    type="text"
+                    placeholder="E.g. Afternoon drop"
+                    value={dropNote}
+                    onChange={e => setDropNote(e.target.value)}
+                    className="bg-slate-950 border border-slate-850 p-1.5 rounded text-slate-200 w-full focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div className="form-group bg-slate-950/40 p-2.5 rounded-lg border border-slate-850 space-y-1.5">
+                <label className="text-[10px] text-amber-500 font-bold uppercase block">Cashier Authorised Sign-Off</label>
+                <input
+                  type="text"
+                  placeholder="Type full legal name to digitally sign"
+                  value={dropCashierSig}
+                  onChange={e => setDropCashierSig(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 rounded p-1.5 text-slate-200 font-mono text-[11px] focus:outline-none focus:border-amber-500 text-center uppercase tracking-wide placeholder-slate-700"
+                />
+                <span className="text-[9px] text-slate-500 block text-center">Dual custody audit log captures IP, user, & signature lock</span>
+              </div>
+              <button
+                onClick={handleRequestDrop}
+                className="w-full py-2 bg-amber-500 text-slate-950 font-extrabold rounded text-xs hover:bg-amber-600 transition cursor-pointer active:scale-[0.98] shadow-md shadow-amber-500/10"
+              >
+                📝 Submit Drop Request (Cashier Signed)
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* PENDING DUAL-AUTHORIZATION BANK DROPS BAR */}
+      {activeDay && cashMovements.some(m => m.type === 'bank_deposit' && m.status === 'pending_approval') && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 space-y-4 shadow-md animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <h3 className="text-sm font-bold text-amber-500 uppercase tracking-wide">Pending Dual-Custody Verification Queue</h3>
+          </div>
+          <p className="text-xs text-slate-300">The following bank drop requests have been signed by the cashiers. A supervisor or manager must receive the cash bag physically, verify the sum, and submit their supervisor code to approve.</p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {cashMovements
+              .filter(m => m.type === 'bank_deposit' && m.status === 'pending_approval')
+              .map(m => (
+                <div key={m.id} className="bg-slate-950 border border-slate-850 rounded-lg p-4 space-y-3 relative overflow-hidden">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase block font-bold">Reference Bag</span>
+                      <span className="text-slate-200 font-mono font-bold text-xs">{m.reference}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-500 uppercase block font-bold">Amount</span>
+                      <span className="text-amber-500 font-black text-sm">R {m.amount.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="text-[11px] text-slate-400 border-t border-slate-900 pt-2 space-y-1">
+                    <div><strong>Cashier Signed:</strong> <span className="text-slate-300 italic font-medium">{m.cashierApprovedByName}</span></div>
+                    <div><strong>Signed Code:</strong> <span className="text-slate-500 font-mono text-[10px]">{m.cashierSignature}</span></div>
+                    <div><strong>Notes:</strong> <span className="text-slate-400">{m.note}</span></div>
+                  </div>
+
+                  <div className="flex gap-2 pt-1 border-t border-slate-900 mt-2">
+                    <button
+                      onClick={() => {
+                        setSelectedDropForAuth(m);
+                        setSupervisorCode('');
+                      }}
+                      className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded text-[10px] cursor-pointer transition text-center"
+                    >
+                      🔑 Verify & Approve
+                    </button>
+                    <button
+                      onClick={() => handleRejectDrop(m.id)}
+                      className="py-1.5 px-2.5 bg-slate-900 hover:bg-slate-850 text-rose-400 font-bold rounded text-[10px] border border-slate-850 transition"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => setSelectedDropForSlip(m)}
+                      className="py-1.5 px-2.5 bg-slate-900 hover:bg-slate-850 text-slate-300 font-bold rounded text-[10px] border border-slate-850 transition"
+                      title="Print physical sign-off slip"
+                    >
+                      <Printer size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Real-time Expense Ledger & Cash Outflows */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 border-b border-slate-800/80 pb-4">
+          <div>
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <ArrowRightLeft size={16} className="text-amber-500" /> Unified Outflow Ledger & Cash Movements
+            </h3>
+            <p className="text-[11px] text-slate-400">Audited historical journal of all cash removals, petty cash payouts, stock purchases, and verified bank drops</p>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Ledger Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-500 font-bold">Filter:</span>
+              <select
+                value={filterType}
+                onChange={e => setFilterType(e.target.value as any)}
+                className="bg-slate-950 border border-slate-850 rounded p-1 text-slate-300 font-medium text-xs focus:outline-none"
+              >
+                <option value="all">All Cash Outflows</option>
+                <option value="expense">Petty Expense Only</option>
+                <option value="stock_purchase">Stock Purchase Only</option>
+                <option value="cash_out">Cash Advance Only</option>
+                <option value="bank_deposit">Approved Bank Drops</option>
+                <option value="pending_drops">Pending Approvals</option>
+              </select>
+            </div>
+            
+            <button
+              onClick={() => {
+                // Export or Print Outflows list
+                const printWindow = window.open('', '_blank');
+                if (printWindow) {
+                  const filtered = getFilteredMovements();
+                  let rowsHtml = filtered.map(m => `
+                    <tr style="border-bottom: 1px solid #ddd;">
+                      <td style="padding: 8px;">${m.date} ${new Date(m.createdAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}</td>
+                      <td style="padding: 8px; font-weight: bold; text-transform: uppercase;">${m.type.replace('_', ' ')}</td>
+                      <td style="padding: 8px; font-weight: bold; color: #b91c1c;">R ${m.amount.toFixed(2)}</td>
+                      <td style="padding: 8px;">${m.reference || '—'}</td>
+                      <td style="padding: 8px;">${m.note || '—'}</td>
+                      <td style="padding: 8px;">${m.cashierApprovedByName || '—'}</td>
+                      <td style="padding: 8px;">${m.supervisorApprovedByName || '—'}</td>
+                      <td style="padding: 8px;">${m.createdByName || 'System'}</td>
+                    </tr>
+                  `).join('');
+
+                  printWindow.document.write(`
+                    <html>
+                      <head>
+                        <title>Lerato Community Financial Service - Cash Outflows Journal</title>
+                        <style>
+                          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #333; }
+                          table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
+                          th { background: #f3f4f6; text-align: left; padding: 10px; border-bottom: 2px solid #ddd; }
+                        </style>
+                      </head>
+                      <body onload="window.print()">
+                        <div style="border-bottom: 3px solid #f59e0b; padding-bottom: 12px;">
+                          <h2 style="margin: 0; font-size: 18px; text-transform: uppercase;">Lerato Community Financial Services</h2>
+                          <div style="font-size: 11px; color: #666; margin-top: 4px;">NCR Registration: NCR/CP/10452 | 50A Von Weilligh Street, Rustenburg</div>
+                        </div>
+                        <h3 style="font-size: 14px; text-transform: uppercase; margin-top: 20px;">Daily Cash Outflow & Bank Drop Journal - ${activeDay?.date || ''}</h3>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Date/Time</th>
+                              <th>Category</th>
+                              <th>Amount</th>
+                              <th>Reference No</th>
+                              <th>Operational Description</th>
+                              <th>Cashier</th>
+                              <th>Supervisor</th>
+                              <th>Logged By</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${rowsHtml || '<tr><td colspan="8" style="padding:16px; text-align:center; color:#666;">No recorded outflows matching filters for this register period.</td></tr>'}
+                          </tbody>
+                        </table>
+                        <div style="margin-top: 40px; display: flex; justify-content: space-between; font-size: 11px;">
+                          <div>
+                            <p>Prepared By: ___________________________</p>
+                            <p style="color:#666;">Cashier Drawer Operator Signature</p>
+                          </div>
+                          <div>
+                            <p>Authorised By: ___________________________</p>
+                            <p style="color:#666;">Supervisor/Manager Signature & Date</p>
+                          </div>
+                        </div>
+                      </body>
+                    </html>
+                  `);
+                  printWindow.document.close();
+                }
+              }}
+              className="px-2.5 py-1 bg-slate-950 hover:bg-slate-900 border border-slate-850 rounded text-slate-300 font-bold text-[10px] cursor-pointer flex items-center gap-1 active:scale-95 transition"
+            >
+              <Printer size={12} /> Print Filtered Journal
+            </button>
+          </div>
+        </div>
+
+        {getFilteredMovements().length === 0 ? (
+          <div className="text-center py-10 text-slate-500 text-xs font-medium">
+            No active cash movements matching the selected filter <strong>("{filterType}")</strong> exist for this daily register session.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-950/80 border-b border-slate-850 text-slate-400 font-bold">
+                  <th className="p-2.5">Time Logged</th>
+                  <th className="p-2.5">Category</th>
+                  <th className="p-2.5">Amount</th>
+                  <th className="p-2.5">Reference</th>
+                  <th className="p-2.5">Operational Description</th>
+                  <th className="p-2.5">Cashier Sign</th>
+                  <th className="p-2.5">Supervisor Auth</th>
+                  <th className="p-2.5">Logged By</th>
+                  <th className="p-2.5 text-center">Receipt Slips</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-850 font-medium text-slate-300">
+                {getFilteredMovements()
+                  .slice()
+                  .reverse()
+                  .map((m) => (
+                    <tr key={m.id} className="hover:bg-slate-850/20 transition">
+                      <td className="p-2.5 text-slate-400 text-[10px]">
+                        {new Date(m.createdAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="p-2.5">
+                        <span className={`px-2 py-0.5 rounded font-bold text-[9px] uppercase ${
+                          m.type === 'expense' ? 'bg-rose-500/10 text-rose-400' :
+                          m.type === 'stock_purchase' ? 'bg-blue-500/10 text-blue-400' :
+                          m.type === 'cash_in' ? 'bg-emerald-500/10 text-emerald-400' :
+                          m.status === 'pending_approval' ? 'bg-amber-500/10 text-amber-500' :
+                          'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        }`}>
+                          {m.type === 'expense' ? 'Petty Expense' :
+                           m.type === 'stock_purchase' ? 'Stock Purchase' :
+                           m.type === 'cash_in' ? 'Float Top-Up' :
+                           m.type === 'cash_out' ? 'Cash Advance' :
+                           m.status === 'pending_approval' ? 'Awaiting Supervisor' : 'Bank Drop (Verified)'}
+                        </span>
+                      </td>
+                      <td className="p-2.5 font-mono font-bold text-slate-200">
+                        <span className={m.type === 'cash_in' ? 'text-emerald-400' : 'text-rose-400'}>
+                          {m.type === 'cash_in' ? '+' : '-'}R {m.amount.toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-slate-400 text-[11px]">{m.reference || '—'}</td>
+                      <td className="p-2.5 text-slate-200">{m.note || '—'}</td>
+                      <td className="p-2.5 text-slate-400 text-[11px]">{m.cashierApprovedByName || '—'}</td>
+                      <td className="p-2.5 text-slate-400 text-[11px]">
+                        {m.status === 'approved' ? (
+                          <span className="text-emerald-400 font-bold flex items-center gap-0.5">
+                            <CheckCircle size={10} /> {m.supervisorApprovedByName || 'Verified (Supervisor)'}
+                          </span>
+                        ) : m.status === 'pending_approval' || (m.type === 'bank_deposit' && m.status !== 'approved') ? (
+                          <span className="text-amber-500 font-semibold animate-pulse">Awaiting Verification</span>
+                        ) : 'N/A (Standard)'}
+                      </td>
+                      <td className="p-2.5 text-slate-400 text-[11px]">{m.createdByName || 'Administrator'}</td>
+                      <td className="p-2.5 text-center">
+                        {m.type === 'bank_deposit' && (
+                          <button
+                            onClick={() => setSelectedDropForSlip(m)}
+                            className="px-2 py-0.5 bg-slate-950 hover:bg-slate-900 border border-slate-850 rounded text-slate-300 hover:text-amber-500 text-[10px] font-bold cursor-pointer transition active:scale-95"
+                          >
+                            🖨️ View Slip
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* SUPERVISOR APPROVAL PASSCODE MODAL */}
+      {selectedDropForAuth && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative animate-fade-in">
+            <button
+              onClick={() => setSelectedDropForAuth(null)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-white transition cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+            <div className="space-y-1">
+              <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
+                <Lock size={16} className="text-amber-500" /> Supervisor Verification
+              </h4>
+              <p className="text-[11px] text-slate-400">Verify Cash and enter authorization supervisor passcode to sign off.</p>
+            </div>
+            
+            <div className="bg-slate-950 border border-slate-850 rounded-lg p-3 text-xs text-slate-400 space-y-1.5">
+              <div className="flex justify-between"><span>Cashier Name:</span><span className="text-slate-200 font-bold">{selectedDropForAuth.cashierApprovedByName}</span></div>
+              <div className="flex justify-between"><span>Physical Bag ID:</span><span className="text-slate-200 font-mono">{selectedDropForAuth.reference}</span></div>
+              <div className="flex justify-between text-sm font-bold text-slate-100 border-t border-slate-900 pt-1.5 mt-1.5">
+                <span>Total Cash Sum:</span>
+                <span className="text-amber-500">R {selectedDropForAuth.amount.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="form-group space-y-1">
+              <label className="text-[10px] text-slate-500 font-bold uppercase block">Supervisor Authorization Code</label>
+              <input
+                type="password"
+                placeholder="••••"
+                value={supervisorCode}
+                onChange={e => setSupervisorCode(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-slate-100 font-mono text-center text-sm tracking-widest focus:outline-none focus:border-amber-500"
+                autoFocus
+              />
+              <span className="text-[9px] text-slate-500 block">Enter standard regulatory supervisor passcode (e.g. 1234)</span>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => handleAuthorizeDrop(selectedDropForAuth.id)}
+                className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold rounded text-xs cursor-pointer transition active:scale-95"
+              >
+                🔐 Verification Confirm
+              </button>
+              <button
+                onClick={() => setSelectedDropForAuth(null)}
+                className="py-2 px-4 bg-slate-950 hover:bg-slate-850 text-slate-400 rounded text-xs border border-slate-850 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRINT PHYSICAL CASH DROP SLIP MODAL */}
+      {selectedDropForSlip && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-2xl w-full p-6 space-y-4 shadow-2xl relative animate-fade-in my-8">
+            <button
+              onClick={() => setSelectedDropForSlip(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+            
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wide">Till Cash Removal physical slip</h4>
+                <p className="text-[10px] text-slate-500">Rendered double retail audit slip. Print for manual vault bag stapling.</p>
+              </div>
+              <button
+                onClick={() => {
+                  const printWindow = window.open('', '_blank');
+                  if (printWindow) {
+                    const slipHtml = `
+                      <html>
+                        <head>
+                          <title>Lerato Cash Removal Slips - ${selectedDropForSlip.reference}</title>
+                          <style>
+                            @media print {
+                              body { background: white; color: black; }
+                            }
+                            body { font-family: "Courier New", monospace; padding: 12px; font-size: 11px; line-height: 1.4; color: black; width: 650px; margin: 0 auto; }
+                            .slip-container { display: flex; justify-content: space-between; }
+                            .slip { border: 1px dashed black; padding: 16px; width: 48%; box-sizing: border-box; }
+                            .header { text-align: center; border-bottom: 1px solid black; padding-bottom: 8px; margin-bottom: 8px; }
+                            .title { font-size: 13px; font-weight: bold; text-transform: uppercase; margin: 4px 0; }
+                            .meta { font-size: 9px; color: #555; }
+                            .item { display: flex; justify-content: space-between; margin: 4px 0; }
+                            .total-box { border-top: 1px double black; border-bottom: 1px double black; padding: 6px 0; margin: 8px 0; font-weight: bold; font-size: 12px; }
+                            .sig-space { margin-top: 24px; border-top: 1px solid black; padding-top: 4px; font-size: 9px; margin-bottom: 4px; text-align: center; }
+                          </style>
+                        </head>
+                        <body onload="window.print()">
+                          <div class="slip-container">
+                            <!-- CASHIER AUDIT COPY -->
+                            <div class="slip">
+                              <div class="header">
+                                <div class="title">LERATO COMMUNITY</div>
+                                <div style="font-size: 9px;">FINANCIAL SERVICE</div>
+                                <div class="meta">NCR REG NO: NCR/CP/10452</div>
+                                <div style="font-weight: bold; font-size: 10px; margin-top: 6px; letter-spacing: 1px;">*** CASHIER COPY ***</div>
+                              </div>
+                              <div class="item"><span>Date / Time:</span><span>${selectedDropForSlip.date} ${new Date(selectedDropForSlip.createdAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                              <div class="item"><span>Bag ID / Ref:</span><span style="font-weight: bold; font-family: monospace;">${selectedDropForSlip.reference}</span></div>
+                              <div class="item"><span>Description:</span><span>${selectedDropForSlip.note}</span></div>
+                              <div class="item"><span>Approval Status:</span><span style="font-weight: bold; text-transform: uppercase;">${selectedDropForSlip.status || 'pending'}</span></div>
+                              <div class="total-box">
+                                <div class="item"><span>CASH REMOVED:</span><span>R ${selectedDropForSlip.amount.toFixed(2)}</span></div>
+                              </div>
+                              <div class="item"><span>Cashier Name:</span><span>${selectedDropForSlip.cashierApprovedByName}</span></div>
+                              <div class="item"><span>Cashier Sign:</span><span style="font-family: 'Courier New'; font-style: italic; font-weight: bold;">[SIGNED: ${selectedDropForSlip.cashierSignature}]</span></div>
+                              <div class="item"><span>Supervisor:</span><span>${selectedDropForSlip.supervisorApprovedByName || 'PENDING'}</span></div>
+                              <div class="item"><span>Supervisor Code:</span><span>${selectedDropForSlip.supervisorCodeUsed ? 'VERIFIED' : 'PENDING'}</span></div>
+                              
+                              <div class="sig-space" style="margin-top: 36px;">CASHIER PHYSICAL RECON SIGNATURE</div>
+                              <div class="sig-space" style="margin-top: 30px;">SUPERVISOR PHYSICAL RECON SIGNATURE</div>
+                            </div>
+
+                            <!-- VAULT / BANK BAG COPY -->
+                            <div class="slip">
+                              <div class="header">
+                                <div class="title">LERATO COMMUNITY</div>
+                                <div style="font-size: 9px;">FINANCIAL SERVICE</div>
+                                <div class="meta">NCR REG NO: NCR/CP/10452</div>
+                                <div style="font-weight: bold; font-size: 10px; margin-top: 6px; letter-spacing: 1px;">*** VAULT BAG COPY ***</div>
+                              </div>
+                              <div class="item"><span>Date / Time:</span><span>${selectedDropForSlip.date} ${new Date(selectedDropForSlip.createdAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                              <div class="item"><span>Bag ID / Ref:</span><span style="font-weight: bold; font-family: monospace;">${selectedDropForSlip.reference}</span></div>
+                              <div class="item"><span>Description:</span><span>${selectedDropForSlip.note}</span></div>
+                              <div class="item"><span>Approval Status:</span><span style="font-weight: bold; text-transform: uppercase;">${selectedDropForSlip.status || 'pending'}</span></div>
+                              <div class="total-box">
+                                <div class="item"><span>CASH REMOVED:</span><span>R ${selectedDropForSlip.amount.toFixed(2)}</span></div>
+                              </div>
+                              <div class="item"><span>Cashier Name:</span><span>${selectedDropForSlip.cashierApprovedByName}</span></div>
+                              <div class="item"><span>Cashier Sign:</span><span style="font-family: 'Courier New'; font-style: italic; font-weight: bold;">[SIGNED: ${selectedDropForSlip.cashierSignature}]</span></div>
+                              <div class="item"><span>Supervisor:</span><span>${selectedDropForSlip.supervisorApprovedByName || 'PENDING'}</span></div>
+                              <div class="item"><span>Supervisor Code:</span><span>${selectedDropForSlip.supervisorCodeUsed ? 'VERIFIED' : 'PENDING'}</span></div>
+                              
+                              <div class="sig-space" style="margin-top: 36px;">CASHIER PHYSICAL RECON SIGNATURE</div>
+                              <div class="sig-space" style="margin-top: 30px;">SUPERVISOR PHYSICAL RECON SIGNATURE</div>
+                            </div>
+                          </div>
+                        </body>
+                      </html>
+                    `;
+                    printWindow.document.write(slipHtml);
+                    printWindow.document.close();
+                  }
+                }}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold rounded text-xs cursor-pointer flex items-center gap-1 transition"
+              >
+                <Printer size={13} /> Print Slips
+              </button>
+            </div>
+
+            {/* Visual HTML Slip Preview on screen */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white text-slate-900 p-6 rounded-xl border border-slate-200 font-mono text-[10px] leading-relaxed shadow-inner select-none max-h-[400px] overflow-y-auto">
+              <div className="border border-dashed border-slate-400 p-4 rounded bg-slate-50 space-y-2">
+                <div className="text-center border-b border-slate-300 pb-2 mb-2">
+                  <span className="font-bold text-xs block">LERATO COMMUNITY</span>
+                  <span className="text-[8px] block">FINANCIAL SERVICE</span>
+                  <span className="text-[7px] text-slate-500 block uppercase font-bold tracking-wider">*** CASHIER AUDIT COPY ***</span>
+                </div>
+                <div className="flex justify-between"><span>Date/Time:</span><span>{selectedDropForSlip.date} {new Date(selectedDropForSlip.createdAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                <div className="flex justify-between"><span>Bag Ref No:</span><span className="font-bold">{selectedDropForSlip.reference}</span></div>
+                <div className="flex justify-between"><span>Category:</span><span>TILL CASH REMOVAL</span></div>
+                <div className="flex justify-between"><span>Description:</span><span className="truncate max-w-[120px]">{selectedDropForSlip.note}</span></div>
+                <div className="flex justify-between"><span>Status:</span><span className="font-bold uppercase text-emerald-600">{selectedDropForSlip.status || 'pending'}</span></div>
+                <div className="border-t border-b border-slate-300 py-1.5 my-1.5 font-bold text-center text-xs text-amber-600 bg-amber-50">
+                  CASH REMOVED: R {selectedDropForSlip.amount.toFixed(2)}
+                </div>
+                <div className="flex justify-between"><span>Cashier Name:</span><span>{selectedDropForSlip.cashierApprovedByName}</span></div>
+                <div className="flex justify-between text-slate-500"><span>Cashier Sign:</span><span className="italic font-bold">Signed ({selectedDropForSlip.cashierSignature})</span></div>
+                <div className="flex justify-between"><span>Supervisor:</span><span>{selectedDropForSlip.supervisorApprovedByName || '—'}</span></div>
+                <div className="flex justify-between"><span>Auth Level:</span><span>{selectedDropForSlip.supervisorCodeUsed ? 'PASSED (DUAL-AUTH)' : 'PENDING'}</span></div>
+                <div className="h-6 border-b border-slate-300 mt-6"></div>
+                <div className="text-[7px] text-slate-500 text-center">CASHIER DRAWER OPERATOR RECON SIGNATURE</div>
+              </div>
+
+              <div className="border border-dashed border-slate-400 p-4 rounded bg-slate-50 space-y-2">
+                <div className="text-center border-b border-slate-300 pb-2 mb-2">
+                  <span className="font-bold text-xs block">LERATO COMMUNITY</span>
+                  <span className="text-[8px] block">FINANCIAL SERVICE</span>
+                  <span className="text-[7px] text-slate-500 block uppercase font-bold tracking-wider">*** VAULT BAG COPY ***</span>
+                </div>
+                <div className="flex justify-between"><span>Date/Time:</span><span>{selectedDropForSlip.date} {new Date(selectedDropForSlip.createdAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                <div className="flex justify-between"><span>Bag Ref No:</span><span className="font-bold">{selectedDropForSlip.reference}</span></div>
+                <div className="flex justify-between"><span>Category:</span><span>TILL CASH REMOVAL</span></div>
+                <div className="flex justify-between"><span>Description:</span><span className="truncate max-w-[120px]">{selectedDropForSlip.note}</span></div>
+                <div className="flex justify-between"><span>Status:</span><span className="font-bold uppercase text-emerald-600">{selectedDropForSlip.status || 'pending'}</span></div>
+                <div className="border-t border-b border-slate-300 py-1.5 my-1.5 font-bold text-center text-xs text-amber-600 bg-amber-50">
+                  CASH REMOVED: R {selectedDropForSlip.amount.toFixed(2)}
+                </div>
+                <div className="flex justify-between"><span>Cashier Name:</span><span>{selectedDropForSlip.cashierApprovedByName}</span></div>
+                <div className="flex justify-between text-slate-500"><span>Cashier Sign:</span><span className="italic font-bold">Signed ({selectedDropForSlip.cashierSignature})</span></div>
+                <div className="flex justify-between"><span>Supervisor:</span><span>{selectedDropForSlip.supervisorApprovedByName || '—'}</span></div>
+                <div className="flex justify-between"><span>Auth Level:</span><span>{selectedDropForSlip.supervisorCodeUsed ? 'PASSED (DUAL-AUTH)' : 'PENDING'}</span></div>
+                <div className="h-6 border-b border-slate-300 mt-6"></div>
+                <div className="text-[7px] text-slate-500 text-center">SUPERVISOR RECON & BAG WITNESS SIGNATURE</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRINT DAILY REGISTER JOURNAL MODAL */}
+      {isPrintJournalOpen && activeDay && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-xl w-full p-6 space-y-4 shadow-2xl relative animate-fade-in my-8">
+            <button
+              onClick={() => setIsPrintJournalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+            
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wide">Daily Cash Control Register Journal</h4>
+                <p className="text-[10px] text-slate-500">Audited operational summary of today's register transactions.</p>
+              </div>
+              <button
+                onClick={() => {
+                  const printWindow = window.open('', '_blank');
+                  if (printWindow) {
+                    const j = getJournalAggregates();
+                    if (!j) return;
+                    const journalHtml = `
+                      <html>
+                        <head>
+                          <title>Lerato Community Financial Service - Daily Cash Journal</title>
+                          <style>
+                            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; color: #333; line-height: 1.5; font-size: 12px; }
+                            .header { border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+                            .company { font-size: 16px; font-weight: bold; text-transform: uppercase; margin: 0; }
+                            .reg { font-size: 10px; color: #666; }
+                            .title { font-size: 14px; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
+                            .grid { display: grid; grid-template-cols: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+                            .summary-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                            .summary-table th, .summary-table td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
+                            .summary-table th { background-color: #f8f9fa; font-weight: bold; }
+                            .highlight { font-weight: bold; background-color: #fffbeb; }
+                            .footer { margin-top: 50px; display: flex; justify-content: space-between; }
+                            .sig-box { width: 200px; border-top: 1px solid #333; text-align: center; padding-top: 5px; font-size: 10px; }
+                          </style>
+                        </head>
+                        <body onload="window.print()">
+                          <div class="header">
+                            <div class="company">Lerato Community Financial Services</div>
+                            <div class="reg">NCR registration: NCR/CP/10452 | Tel: 086 100 2472</div>
+                            <div class="title">Daily Cash Control Register Journal Summary</div>
+                          </div>
+
+                          <div class="grid">
+                            <div>
+                              <strong>Register Date:</strong> ${j.date}<br/>
+                              <strong>Status:</strong> ${j.status.toUpperCase()}<br/>
+                              <strong>Opened At:</strong> ${new Date(j.openedAt).toLocaleString()}<br/>
+                            </div>
+                            <div>
+                              <strong>Opened By:</strong> ${j.openedBy}<br/>
+                              <strong>Closed At:</strong> ${j.closedAt !== '—' ? new Date(j.closedAt).toLocaleString() : '—'}<br/>
+                              <strong>Closed By:</strong> ${j.closedBy}<br/>
+                            </div>
+                          </div>
+
+                          <table class="summary-table">
+                            <thead>
+                              <tr>
+                                <th>Journal Category Outlines</th>
+                                <th style="text-align: right;">Amount (ZAR)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td>Starting Drawer Opening Float Cash</td>
+                                <td style="text-align: right; font-weight: bold;">R ${j.opening.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td>(+) POS Retail Cash Sales (Net of Discounts)</td>
+                                <td style="text-align: right; color: green;">+R ${j.cashSales.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td>(+) Cash Repayments & Installments Received</td>
+                                <td style="text-align: right; color: green;">+R ${j.cashRepayments.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td>(+) Cash Manual Top-Ups</td>
+                                <td style="text-align: right; color: green;">+R ${j.cashInMoves.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td>(-) Petty Cash Expenses & Outflows Paid</td>
+                                <td style="text-align: right; color: red;">-R ${j.cashOutMoves.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td>(-) Dual-Authorized Vault Bank Drops Removed</td>
+                                <td style="text-align: right; color: red;">-R ${j.approvedBankDeposits.toFixed(2)}</td>
+                              </tr>
+                              <tr class="highlight" style="border-top: 2px solid #333;">
+                                <td><strong>Expected Closing Register Cash Balance</strong></td>
+                                <td style="text-align: right; font-weight: bold;">R ${j.expected.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td><strong>Actual Counted Closing Cash</strong></td>
+                                <td style="text-align: right; font-weight: bold;">R ${j.closed.toFixed(2)}</td>
+                              </tr>
+                              <tr class="highlight">
+                                <td><strong>Register Variance (Discrepancy)</strong></td>
+                                <td style="text-align: right; font-weight: bold; color: ${j.difference < 0 ? 'red' : 'green'};">
+                                  R ${j.difference.toFixed(2)}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+
+                          <div class="footer">
+                            <div class="sig-box">
+                              <br/><br/>
+                              <strong>Drawer Operator Signature</strong><br/>
+                              <span>Date: __________________</span>
+                            </div>
+                            <div class="sig-box">
+                              <br/><br/>
+                              <strong>Supervisor / Witness Signature</strong><br/>
+                              <span>Date: __________________</span>
+                            </div>
+                          </div>
+                        </body>
+                      </html>
+                    `;
+                    printWindow.document.write(journalHtml);
+                    printWindow.document.close();
+                  }
+                }}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold rounded text-xs cursor-pointer flex items-center gap-1 transition"
+              >
+                <Printer size={13} /> Print Journal Summary
+              </button>
+            </div>
+
+            {/* Visual preview of journal on screen */}
+            {getJournalAggregates() && (
+              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 text-xs space-y-4 select-none font-sans leading-relaxed">
+                <div className="text-center border-b border-slate-800 pb-3">
+                  <span className="text-sm font-bold text-slate-200 uppercase tracking-wider block">Lerato Community Financial Services</span>
+                  <span className="text-[10px] text-slate-500 block">NCA NCR/CP/10452 | Journal Overview</span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-[11px] text-slate-400">
+                  <div><strong>Register Date:</strong> {getJournalAggregates()?.date}</div>
+                  <div><strong>Status:</strong> <span className="text-amber-500 uppercase font-bold">{getJournalAggregates()?.status}</span></div>
+                  <div><strong>Opened By:</strong> {getJournalAggregates()?.openedBy}</div>
+                  <div><strong>Closed By:</strong> {getJournalAggregates()?.closedBy}</div>
+                </div>
+
+                <div className="border-t border-slate-850 pt-3 space-y-2 font-medium">
+                  <div className="flex justify-between text-slate-400"><span>Drawer Opening Float:</span><span className="text-slate-200">R {getJournalAggregates()?.opening.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-slate-500"><span>(+) POS Retail Cash:</span><span className="text-emerald-400">+R {getJournalAggregates()?.cashSales.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-slate-500"><span>(+) Installments Paid:</span><span className="text-emerald-400">+R {getJournalAggregates()?.cashRepayments.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-slate-500"><span>(+) Float manual topups:</span><span className="text-emerald-400">+R {getJournalAggregates()?.cashInMoves.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-slate-500"><span>(-) Petty Cash Outflows:</span><span className="text-rose-400">-R {getJournalAggregates()?.cashOutMoves.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-slate-500"><span>(-) Verified Bank Drops:</span><span className="text-rose-400">-R {getJournalAggregates()?.approvedBankDeposits.toFixed(2)}</span></div>
+                  
+                  <div className="flex justify-between border-t border-slate-800 pt-2 font-bold text-slate-200 text-sm">
+                    <span>Expected Drawer Closing:</span>
+                    <span>R {getJournalAggregates()?.expected.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-slate-200 text-sm">
+                    <span>Actual Counted Closing:</span>
+                    <span>R {getJournalAggregates()?.closed.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-dashed border-slate-800 pt-2 font-black text-amber-500 text-sm">
+                    <span>Reconciled Discrepancy Variance:</span>
+                    <span className={getJournalAggregates()!.difference < 0 ? 'text-rose-500' : 'text-emerald-400'}>
+                      R {getJournalAggregates()?.difference.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

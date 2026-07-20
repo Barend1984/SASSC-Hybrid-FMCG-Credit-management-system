@@ -14,7 +14,9 @@ import {
   calculateCreditIssued,
   calculateCustomerPayments,
   calculateAvailableCash,
-  calculateRealTimeProfit
+  calculateRealTimeProfit,
+  calculateCapitalReconciliation,
+  calculateCompanyFinancialState
 } from '../utils/financialEngine';
 
 interface DashboardViewProps {
@@ -24,6 +26,7 @@ interface DashboardViewProps {
   customers: Customer[];
   onNavigate: (page: string) => void;
   activeDay: any;
+  currentUser: any;
 }
 
 interface FraudAlert {
@@ -41,7 +44,8 @@ export default function DashboardView({
   payments, 
   customers, 
   onNavigate, 
-  activeDay 
+  activeDay,
+  currentUser
 }: DashboardViewProps) {
   
   const [supervisorPasscode, setSupervisorPasscode] = useState('');
@@ -70,7 +74,9 @@ export default function DashboardView({
   const todaySales = sales.filter(s => s.date === todayStr);
   const todayPayments = payments.filter(p => p.date === todayStr);
   
-  const todayCashSalesAmt = calculateAvailableCash(todaySales, [], [], []);
+  const todayCashSalesAmt = todaySales
+    .filter(s => ['cash', 'card', 'eft'].includes(s.method))
+    .reduce((sum, s) => sum + s.total, 0);
   const todayCreditIssuedAmt = calculateCreditIssued(todaySales);
   const todayPaymentsAmt = calculateCustomerPayments(todayPayments);
 
@@ -87,9 +93,16 @@ export default function DashboardView({
   const currentStock = useMemo(() => loadDBList<Product>('stock'), [sales, payments]);
   const writeOffs = useMemo(() => loadDBList<WriteOff>('writeOffs'), [sales, payments]);
   const [overrideLogs, setOverrideLogs] = useState<OverrideLog[]>(() => loadDBList<OverrideLog>('override_logs'));
+  
+  const [clearedAlerts, setClearedAlerts] = useState<string[]>(() => loadDBList<string>('sassc_cleared_alerts_ids'));
+  const [discrepancyLogs, setDiscrepancyLogs] = useState<any[]>(() => loadDBList<any>('discrepancy_logs'));
+  const [resolvingAlertId, setResolvingAlertId] = useState<string | null>(null);
+  const [resolutionNotes, setResolutionNotes] = useState('');
 
   useEffect(() => {
     setOverrideLogs(loadDBList<OverrideLog>('override_logs'));
+    setClearedAlerts(loadDBList<string>('sassc_cleared_alerts_ids'));
+    setDiscrepancyLogs(loadDBList<any>('discrepancy_logs'));
   }, [sales, payments]);
 
   // Compute Cash on Hand & Bank Cash via Financial Engine
@@ -103,33 +116,54 @@ export default function DashboardView({
 
   const totalCash = cashOnHand + cashInBank;
 
-  // Compute Stock Value via Financial Engine
-  const stockCost = useMemo(() => {
-    return calculateInventoryCost(currentStock);
-  }, [currentStock]);
+  // Complete Unified Financial State Analysis using Integer Cents
+  const companyFinancials = useMemo(() => {
+    const state = calculateCapitalReconciliation(
+      sales,
+      payments,
+      cashMovements,
+      cashDays,
+      agreements,
+      currentStock,
+      writeOffs
+    );
+    
+    // Profit Ledger metrics (realized margins, accrued interest, fees, expenses, write-offs)
+    const netProfitValue = calculateRealTimeProfit(
+      sales,
+      cashMovements,
+      writeOffs,
+      agreements,
+      currentStock
+    );
+    
+    return {
+      ...state,
+      netProfit: netProfitValue,
+      totalBusinessValue: state.capitalUnderManagement + netProfitValue
+    };
+  }, [sales, payments, cashMovements, cashDays, agreements, currentStock, writeOffs]);
 
-  // Compute Credit Debt
-  const creditDebt = loanPortfolio.totalBookValue;
+  // Extract variables with precision
+  const capitalUnderManagement = companyFinancials.capitalUnderManagement;
+  const netProfit = companyFinancials.netProfit;
+  const totalBusinessValue = companyFinancials.totalBusinessValue;
 
-  // Total Financial State formula
-  const totalFinancialState = totalCash + stockCost - creditDebt;
-
-  // Real-time net business profit
-  const netProfit = useMemo(() => {
-    return calculateRealTimeProfit(sales, cashMovements, writeOffs);
-  }, [sales, cashMovements, writeOffs]);
+  const stateDetails = useMemo(() => {
+    return calculateCompanyFinancialState(
+      sales,
+      payments,
+      cashMovements,
+      cashDays,
+      agreements,
+      currentStock,
+      writeOffs
+    );
+  }, [sales, payments, cashMovements, cashDays, agreements, currentStock, writeOffs]);
 
   // Capital vs Profit Split Analysis
-  const capitalCapitalBase = useMemo(() => {
-    // Basic baseline capital calculation
-    const openingFloats = cashDays.reduce((sum, d) => sum + (d.openingCash || 0), 0);
-    const stockBase = currentStock.reduce((sum, p) => sum + ((p.qty || 0) * (p.buyPrice || 0)), 0);
-    return Math.max(0, openingFloats + stockBase);
-  }, [cashDays, currentStock]);
-
-  // If netProfit is negative, clamp profit representation at zero
   const displayedProfit = Math.max(0, netProfit);
-  const displayedCapital = Math.max(0, totalFinancialState - displayedProfit);
+  const displayedCapital = Math.max(0, capitalUnderManagement);
   const totalSplitSum = displayedCapital + displayedProfit;
   const capitalPercentage = totalSplitSum > 0 ? (displayedCapital / totalSplitSum) * 100 : 100;
   const profitPercentage = totalSplitSum > 0 ? (displayedProfit / totalSplitSum) * 100 : 0;
@@ -338,41 +372,54 @@ export default function DashboardView({
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold text-slate-400 bg-slate-950 border border-slate-800 rounded px-2.5 py-1 uppercase tracking-widest flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                Real-Time Aggregated Balance
+                Capital Preservation & Management
               </span>
             </div>
             <h3 className="text-lg font-black text-slate-100 tracking-tight">
-              Total Financial State
+              Capital Under Management
             </h3>
             <p className="text-xs text-slate-400 max-w-xl">
-              An aggregated view of your operational liquidity, current stock value at cost, offset by active customer credit books.
+              The primary ledger tracking absolute capital preservation, representing physical register float, digital bank balances, and stock inventory cost.
             </p>
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 pt-1 flex-wrap">
-              <Info className="h-3.5 w-3.5 text-amber-500/70 shrink-0" />
-              Formula: <span className="text-slate-200">Total Cash (R {totalCash.toFixed(2)})</span> + <span className="text-slate-200">Stock Value (R {stockCost.toFixed(2)})</span> - <span className="text-rose-400">Credit Debt (R {creditDebt.toFixed(2)})</span>
-            </div>
+            {currentUser?.role !== 'cashier' ? (
+              <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 pt-1 flex-wrap">
+                <Info className="h-3.5 w-3.5 text-amber-500/70 shrink-0" />
+                Formula: <span className="text-slate-200">Cash on Hand (R {stateDetails.grossCashOnHand.toFixed(2)})</span> + <span className="text-slate-200">Stock @ Cost (R {stateDetails.stockCost.toFixed(2)})</span> + <span className="text-slate-200">Principal (R {stateDetails.outstandingPrincipal.toFixed(2)})</span> + <span className="text-slate-200">Bank (R {stateDetails.bankAccountValue.toFixed(2)})</span> + <span className="text-slate-200">Expense Ledger (R {stateDetails.cashPaidOut.toFixed(2)})</span> - <span className="text-emerald-400">Net Profit (R {netProfit.toFixed(2)})</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-500 pt-1">
+                <Info className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+                <span>Formula detail masked for Cashier Operator reconciliation checks.</span>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
             <div className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex flex-col justify-center min-w-[200px]">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Financial State</span>
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Capital Under Management</span>
               <div className="text-2xl font-black text-amber-500 font-mono mt-1">
-                {formatCurrency(totalFinancialState)}
+                {currentUser?.role !== 'cashier' ? formatCurrency(capitalUnderManagement) : 'R ••••••'}
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2 flex-1 sm:flex-initial">
               <div className="bg-slate-950/60 border border-slate-850 p-2 rounded-lg text-center min-w-[90px]">
                 <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Total Cash</span>
-                <span className="text-[11px] font-bold text-slate-300 font-mono mt-0.5 block">R {totalCash.toFixed(2)}</span>
+                <span className="text-[11px] font-bold text-slate-300 font-mono mt-0.5 block">
+                  {currentUser?.role !== 'cashier' ? `R ${stateDetails.grossCashOnHand.toFixed(2)}` : 'R ••••'}
+                </span>
               </div>
               <div className="bg-slate-950/60 border border-slate-850 p-2 rounded-lg text-center min-w-[90px]">
-                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Stock Value</span>
-                <span className="text-[11px] font-bold text-slate-300 font-mono mt-0.5 block">R {stockCost.toFixed(2)}</span>
+                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Stock Cost</span>
+                <span className="text-[11px] font-bold text-slate-300 font-mono mt-0.5 block">
+                  {currentUser?.role !== 'cashier' ? `R ${stateDetails.stockCost.toFixed(2)}` : 'R ••••'}
+                </span>
               </div>
               <div className="bg-slate-950/60 border border-slate-850 p-2 rounded-lg text-center min-w-[90px]">
-                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Credit Debt</span>
-                <span className="text-[11px] font-bold text-rose-400 font-mono mt-0.5 block">R {creditDebt.toFixed(2)}</span>
+                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Depth Principal</span>
+                <span className="text-[11px] font-bold text-rose-450 font-mono mt-0.5 block">
+                  {currentUser?.role !== 'cashier' ? `R ${stateDetails.outstandingPrincipal.toFixed(2)}` : 'R ••••'}
+                </span>
               </div>
             </div>
           </div>
@@ -434,99 +481,103 @@ export default function DashboardView({
               <span className="p-1 rounded bg-amber-500/10 text-amber-400"><Scale size={14} /></span>
             </div>
             <div className="text-2xl font-bold text-slate-100 mt-2 font-mono">
-              {formatCurrency(totalBookExposure)}
+              {currentUser?.role !== 'cashier' ? formatCurrency(totalBookExposure) : 'R ••••••'}
             </div>
           </div>
           <div className="text-[10px] text-slate-500 mt-3 pt-2 border-t border-slate-850">
-            Active exposure in {activeAgreements.length} contracts
+            {currentUser?.role !== 'cashier' ? `Active exposure in ${activeAgreements.length} contracts` : 'Masked for Cashier'}
           </div>
         </div>
 
       </div>
 
-      {/* Capital vs Profit Split View Section */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-          <div>
-            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-              <Scale size={16} className="text-amber-500" />
-              Capital vs Profit Allocation Ledger
-            </h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Visualizes business liquidity capital structure compared to net profit contributions.
-            </p>
-          </div>
-          <div className="text-right text-xs">
-            <span className="text-slate-500 font-semibold block">Total Aggregated Capital Base</span>
-            <span className="text-amber-500 font-extrabold font-mono">{formatCurrency(totalSplitSum)}</span>
-          </div>
-        </div>
-
-        {/* Multi-Segment Horizontal Progress bar */}
-        <div className="h-6 w-full rounded-lg overflow-hidden flex bg-slate-950 p-1 border border-slate-850">
-          <div 
-            style={{ width: `${capitalPercentage}%` }} 
-            className="h-full bg-amber-500 rounded-l transition-all duration-500 flex items-center justify-center text-[9px] font-black text-slate-950 font-mono"
-            title={`Capital: ${capitalPercentage.toFixed(1)}%`}
-          >
-            {capitalPercentage > 15 ? `Capital Base ${capitalPercentage.toFixed(0)}%` : ''}
-          </div>
-          <div 
-            style={{ width: `${profitPercentage}%` }} 
-            className="h-full bg-emerald-500 rounded-r transition-all duration-500 flex items-center justify-center text-[9px] font-black text-slate-950 font-mono"
-            title={`Net Profit: ${profitPercentage.toFixed(1)}%`}
-          >
-            {profitPercentage > 15 ? `Net Profit ${profitPercentage.toFixed(0)}%` : ''}
-          </div>
-        </div>
-
-        {/* Detailed Split Table Breakdown */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-          <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-850">
-            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider block border-b border-slate-850 pb-1.5 mb-2">Liquidity Capital Structure</span>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Cash-on-Hand (Register Float):</span>
-                <span className="font-mono text-slate-200">{formatCurrency(cashOnHand)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Cash-in-Bank (Digital Settlement):</span>
-                <span className="font-mono text-slate-200">{formatCurrency(cashInBank)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Inventory Asset Valuation @ Cost:</span>
-                <span className="font-mono text-slate-200">{formatCurrency(stockCost)}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-850/60 pt-1 font-bold text-slate-100">
-                <span>Total Asset capital:</span>
-                <span className="font-mono text-amber-500">{formatCurrency(cashOnHand + cashInBank + stockCost)}</span>
-              </div>
+      {/* Capital vs Profit Split View Section - Redacted for Cashiers */}
+      {currentUser?.role !== 'cashier' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                <Scale size={16} className="text-amber-500" />
+                Capital vs Profit Allocation Ledger
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Visualizes business liquidity capital structure compared to net profit contributions.
+              </p>
+            </div>
+            <div className="text-right text-xs">
+              <span className="text-slate-500 font-semibold block">Total Aggregated Capital Base</span>
+              <span className="text-amber-500 font-extrabold font-mono">{formatCurrency(totalSplitSum)}</span>
             </div>
           </div>
 
-          <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-850">
-            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block border-b border-slate-850 pb-1.5 mb-2">Operating Profitability Contribution</span>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Cumulative Sales Profit (Markup):</span>
-                <span className="font-mono text-slate-200">{formatCurrency(sales.reduce((sum, s) => sum + (s.total || 0), 0) - (sales.reduce((sum, s) => sum + (s.items?.reduce((subSum, item) => subSum + (item.qty * (currentStock.find(p => p.id === item.stockId)?.buyPrice || 0)), 0) || 0), 0)))}</span>
+          {/* Multi-Segment Horizontal Progress bar */}
+          <div className="h-6 w-full rounded-lg overflow-hidden flex bg-slate-950 p-1 border border-slate-850">
+            <div 
+              style={{ width: `${capitalPercentage}%` }} 
+              className="h-full bg-amber-500 rounded-l transition-all duration-500 flex items-center justify-center text-[9px] font-black text-slate-950 font-mono"
+              title={`Capital: ${capitalPercentage.toFixed(1)}%`}
+            >
+              {capitalPercentage > 15 ? `Capital Base ${capitalPercentage.toFixed(0)}%` : ''}
+            </div>
+            <div 
+              style={{ width: `${profitPercentage}%` }} 
+              className="h-full bg-emerald-500 rounded-r transition-all duration-500 flex items-center justify-center text-[9px] font-black text-slate-950 font-mono"
+              title={`Net Profit: ${profitPercentage.toFixed(1)}%`}
+            >
+              {profitPercentage > 15 ? `Net Profit ${profitPercentage.toFixed(0)}%` : ''}
+            </div>
+          </div>
+
+          {/* Detailed Split Table Breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-850">
+              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider block border-b border-slate-850 pb-1.5 mb-2">Liquidity Capital Structure</span>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Cash-on-Hand (Register Float):</span>
+                  <span className="font-mono text-slate-200">{formatCurrency(cashOnHand)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Cash-in-Bank (Digital Settlement):</span>
+                  <span className="font-mono text-slate-200">{formatCurrency(cashInBank)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Inventory Asset Valuation @ Cost:</span>
+                  <span className="font-mono text-slate-200">{formatCurrency(stateDetails.stockCost)}</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-850/60 pt-1 font-bold text-slate-100">
+                  <span>Total Asset capital:</span>
+                  <span className="font-mono text-amber-500">{formatCurrency(cashOnHand + cashInBank + stateDetails.stockCost)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Operating Expenses & Cash Outs:</span>
-                <span className="font-mono text-rose-400">-{formatCurrency(cashMovements.filter(m => ['expense', 'stock_purchase'].includes(m.type)).reduce((sum, m) => sum + m.amount, 0))}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Stock Write-Off Asset Losses:</span>
-                <span className="font-mono text-rose-400">-{formatCurrency(writeOffs.reduce((sum, w) => sum + w.lossValue, 0))}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-850/60 pt-1 font-bold text-slate-100">
-                <span>Net Business Operating Profit:</span>
-                <span className="font-mono text-emerald-400">{formatCurrency(netProfit)}</span>
+            </div>
+
+            <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-850">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block border-b border-slate-850 pb-1.5 mb-2">Operating Profitability Contribution</span>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Retail Sales Profit (Markup):</span>
+                  <span className="font-mono text-slate-200">
+                    {formatCurrency(sales.reduce((sum, s) => sum + (s.total || 0), 0) - (sales.reduce((sum, s) => sum + (s.items?.reduce((subSum, item) => subSum + (item.qty * (currentStock.find(p => p.id === item.stockId)?.buyPrice || 0)), 0) || 0), 0)))}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Operating Expenses & Cash Outs:</span>
+                  <span className="font-mono text-rose-400">-{formatCurrency(cashMovements.filter(m => ['expense', 'stock_purchase', 'cash_out'].includes(m.type)).reduce((sum, m) => sum + m.amount, 0))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Stock Write-Off Asset Losses:</span>
+                  <span className="font-mono text-rose-400">-{formatCurrency(writeOffs.reduce((sum, w) => sum + w.lossValue, 0))}</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-850/60 pt-1 font-bold text-slate-100">
+                  <span>Net Business Operating Profit:</span>
+                  <span className="font-mono text-emerald-400">{formatCurrency(netProfit)}</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main Core Widgets Dashboard Section */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -534,57 +585,187 @@ export default function DashboardView({
         {/* Left Side: Dynamic Fraud Alerts UI & Transaction Timeline */}
         <div className="lg:col-span-8 space-y-6">
           
-          {/* FRAUD ALERTS PANEL */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm">
-            <div className="flex justify-between items-center border-b border-slate-850 pb-3">
-              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                <ShieldAlert className="text-rose-500 h-5 w-5" />
-                Security Monitoring & Fraud Alerts ({dynamicFraudAlerts.length})
-              </h3>
-              <span className="text-[10px] text-rose-400 bg-rose-950/30 border border-rose-900/50 px-2.5 py-1 rounded font-bold uppercase">
-                Real-Time Risk Analysis
-              </span>
-            </div>
-
-            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-              {dynamicFraudAlerts.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 text-xs">
-                  All transactions and accounts passed strict financial regulatory checkmarks. No anomalies detected.
-                </div>
-              ) : (
-                dynamicFraudAlerts.map(alert => (
-                  <div key={alert.id} className="p-3 bg-slate-950 border border-slate-850 rounded-lg flex items-start gap-3 text-xs hover:border-rose-500/20 transition">
-                    <div className="mt-0.5">
-                      {alert.severity === 'high' ? (
-                        <AlertOctagon className="text-rose-500 h-4.5 w-4.5" />
-                      ) : alert.severity === 'medium' ? (
-                        <AlertTriangle className="text-amber-500 h-4.5 w-4.5" />
-                      ) : (
-                        <Info className="text-slate-400 h-4.5 w-4.5" />
-                      )}
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex justify-between items-start gap-2">
-                        <span className="font-bold text-slate-100">{alert.title}</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-850 font-bold uppercase">{alert.category}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
-                            alert.severity === 'high' ? 'bg-rose-500/10 text-rose-400' :
-                            alert.severity === 'medium' ? 'bg-amber-500/10 text-amber-500' :
-                            'bg-slate-800 text-slate-300'
-                          }`}>
-                            {alert.severity}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-slate-400 text-[11px] leading-relaxed">{alert.description}</p>
-                      <div className="text-[9px] text-slate-500 font-mono">Occurred/Logged: {alert.date}</div>
-                    </div>
+          {/* FRAUD ALERTS PANEL - Admin/Supervisor Only */}
+          {currentUser?.role !== 'cashier' && (() => {
+            const visibleAlerts = dynamicFraudAlerts.filter(alert => !clearedAlerts.includes(alert.id));
+            return (
+              <div className="space-y-6">
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm">
+                  <div className="flex justify-between items-center border-b border-slate-850 pb-3">
+                    <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                      <ShieldAlert className="text-rose-500 h-5 w-5" />
+                      Security Monitoring & Fraud Alerts ({visibleAlerts.length})
+                    </h3>
+                    <span className="text-[10px] text-rose-400 bg-rose-950/30 border border-rose-900/50 px-2.5 py-1 rounded font-bold uppercase">
+                      Real-Time Risk Analysis
+                    </span>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
+
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                    {visibleAlerts.length === 0 ? (
+                      <div className="p-8 text-center text-slate-500 text-xs">
+                        All transactions and accounts passed strict financial regulatory checkmarks. No anomalies detected.
+                      </div>
+                    ) : (
+                      visibleAlerts.map(alert => (
+                        <div key={alert.id} className="p-3 bg-slate-950 border border-slate-850 rounded-lg flex flex-col gap-2.5 text-xs hover:border-rose-500/20 transition">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 shrink-0">
+                              {alert.severity === 'high' ? (
+                                <AlertOctagon className="text-rose-500 h-4.5 w-4.5" />
+                              ) : alert.severity === 'medium' ? (
+                                <AlertTriangle className="text-amber-500 h-4.5 w-4.5" />
+                              ) : (
+                                <Info className="text-slate-400 h-4.5 w-4.5" />
+                              )}
+                            </div>
+                            <div className="flex-1 space-y-1 min-w-0">
+                              <div className="flex justify-between items-start gap-2 flex-wrap">
+                                <span className="font-bold text-slate-100">{alert.title}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-850 font-bold uppercase">{alert.category}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
+                                    alert.severity === 'high' ? 'bg-rose-500/10 text-rose-400' :
+                                    alert.severity === 'medium' ? 'bg-amber-500/10 text-amber-500' :
+                                    'bg-slate-800 text-slate-300'
+                                  }`}>
+                                    {alert.severity}
+                                  </span>
+                                </div>
+                              </div>
+                              <p className="text-slate-400 text-[11px] leading-relaxed break-words">{alert.description}</p>
+                              <div className="text-[9px] text-slate-500 font-mono">Occurred/Logged: {alert.date}</div>
+                            </div>
+                          </div>
+
+                          {/* ACTION PANEL */}
+                          <div className="pt-2 border-t border-slate-900/60 flex flex-col gap-2">
+                            {resolvingAlertId !== alert.id ? (
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setResolvingAlertId(alert.id);
+                                    setResolutionNotes('');
+                                  }}
+                                  className="px-2.5 py-1 bg-slate-900 hover:bg-rose-500/10 hover:text-rose-400 border border-slate-850 rounded text-[10px] font-bold text-slate-400 transition cursor-pointer"
+                                >
+                                  Investigate & Clear Alert
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-lg space-y-2">
+                                <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Supervisor Resolution notes</label>
+                                <textarea
+                                  value={resolutionNotes}
+                                  onChange={e => setResolutionNotes(e.target.value)}
+                                  placeholder="Describe investigations, findings, or corrections applied..."
+                                  rows={2}
+                                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 p-1.5 rounded text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none font-medium resize-none"
+                                />
+                                <div className="flex gap-2 justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setResolvingAlertId(null);
+                                      setResolutionNotes('');
+                                    }}
+                                    className="px-2 py-1 bg-slate-800 hover:bg-slate-750 text-slate-400 rounded text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!resolutionNotes.trim()) {
+                                        alert('Resolution notes are required.');
+                                        return;
+                                      }
+                                      const logEntry = {
+                                        id: generateUid(),
+                                        alertId: alert.id,
+                                        title: alert.title,
+                                        description: alert.description,
+                                        category: alert.category,
+                                        severity: alert.severity,
+                                        date: alert.date,
+                                        resolvedBy: currentUser?.fullName || 'Supervisor',
+                                        resolvedAt: new Date().toISOString(),
+                                        message: resolutionNotes
+                                      };
+                                      const updatedLogs = [logEntry, ...discrepancyLogs];
+                                      const updatedClearedIds = [...clearedAlerts, alert.id];
+                                      
+                                      saveDBList('discrepancy_logs', updatedLogs);
+                                      saveDBList('sassc_cleared_alerts_ids', updatedClearedIds);
+                                      
+                                      setDiscrepancyLogs(updatedLogs);
+                                      setClearedAlerts(updatedClearedIds);
+                                      
+                                      setResolvingAlertId(null);
+                                      setResolutionNotes('');
+                                    }}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black rounded text-[10px] cursor-pointer"
+                                  >
+                                    Acknowledge & Dismiss Alert
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* HISTORICAL RESOLUTION LOG */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-sm">
+                  <div className="flex justify-between items-center border-b border-slate-850 pb-3">
+                    <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                      <BookOpen className="text-emerald-500 h-5 w-5" />
+                      Supervisor Discrepancies Log ({discrepancyLogs.length})
+                    </h3>
+                    <span className="text-[10px] text-emerald-400 bg-emerald-950/30 border border-emerald-900/50 px-2.5 py-1 rounded font-bold uppercase">
+                      Audit Records
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                    {discrepancyLogs.length === 0 ? (
+                      <div className="p-8 text-center text-slate-500 text-xs">
+                        No resolved historical discrepancies found. All clearances are tracked here for audit trails.
+                      </div>
+                    ) : (
+                      discrepancyLogs.map(log => (
+                        <div key={log.id} className="p-3 bg-slate-950 border border-slate-850 rounded-lg space-y-2 text-xs">
+                          <div className="flex justify-between items-start gap-2 flex-wrap">
+                            <div>
+                              <span className="font-bold text-slate-100">{log.title}</span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5">Alert Description: {log.description}</span>
+                            </div>
+                            <span className="text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-850 font-bold uppercase shrink-0">
+                              {log.category}
+                            </span>
+                          </div>
+                          
+                          <div className="p-2.5 bg-slate-900/50 border border-slate-850/50 rounded text-[11px] text-slate-300">
+                            <strong className="text-[9px] text-amber-500 uppercase tracking-wider block mb-1">Supervisor Resolution Notes:</strong>
+                            {log.message}
+                          </div>
+
+                          <div className="flex justify-between items-center text-[9px] text-slate-500 pt-1 font-mono">
+                            <span>Auditor: <strong className="text-slate-400">{log.resolvedBy}</strong></span>
+                            <span>Cleared: {new Date(log.resolvedAt).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* REAL TIME TRANSACTION TIMELINE */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
